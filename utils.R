@@ -1,14 +1,14 @@
-get_name <- function(id) {
+get_name <- function(syn, id) {
   name <- tryCatch({
     syn$getUserProfile(id)$userName
   }, error = function(err) {
     syn$getTeam(id)$name
   })
-  name
+  return(name)
 }
 
 
-get_submissions <- function(view_id, gs_id) {
+get_submissions <- function(view_id) {
   # set up synapse
   reticulate::use_condaenv('synapse')
   synapseclient <- reticulate::import('synapseclient')
@@ -22,8 +22,9 @@ get_submissions <- function(view_id, gs_id) {
       id,
       submitterid,
       evaluationid,
-      prediction_fileid
-    FROM {sub_id} 
+      prediction_fileid,
+      submission_scores
+    FROM {view_id} 
     WHERE 
       status = 'ACCEPTED'
       AND submission_status = 'SCORED' 
@@ -37,41 +38,45 @@ get_submissions <- function(view_id, gs_id) {
   sub_df <- syn$tableQuery(query)$asDataFrame() %>%
     mutate(across(everything(), as.character),
            task = if_else(evaluationid == "9615023", "task1", "task2"),
-           team = sapply(submitterid, get_name),
+           team = sapply(submitterid, get_name, syn = syn),
     )
-  sub_df
+  return(sub_df)
 }
 
 
-bootstrap <- function(seq_size,
-                      n_iterations=1000,
-                      seed=98109) {
-  set.seed(seed)
-  bs_indices <- lapply(sequence(n_iterations), function(n) {
-    sample(sequence(seq_size), seq_size, replace = TRUE)
-  })
-  bs_indices
+get_scores <- function(sub_df) {
+  # validate if any valid submission to prevent from failing
+  stopifnot(nrow(sub_df) > 0)
+
+  # read all valid scores results
+  all_scores <- lapply(1:nrow(sub_df), function(sub_n) {
+
+    score_id <- sub_df$submission_scores[sub_n]
+    
+    # read all test case scores for each submission
+    score_df <- syn$get(score_id)$path %>%
+      data.table::fread(verbose = FALSE) %>%
+      mutate(id = sub_df$id[sub_n],
+             submitterid = sub_df$submitterid[sub_n],
+             team = sub_df$team[sub_n])
+
+    return(score_df)
+  }) %>% bind_rows()
 }
 
 
-rank_submission <- function(scores, # matrix of scores for all testcases all submissions
-                            dataset_col, # column containing the test case file names 
-                            primary_col, # primary metric column name
-                            bs_col, # column containing the bootstrapping indice
-                            secondary_col # secondary metric column name
-                            ) {
-  # should contain the testcase
-  stopifnot(c("id", "submitterid", dataset_col, bs_col, primary_col) %in% colnames(scores))
-  message("Ranking scores ...")
+rank_submissions <- function(scores, primary_metric, secondary_metric) {
+  stopifnot(nrow(scores) > 0)
+  stopifnot(c(primary_metric, secondary_metric, "dataset", "id", "submitterid") %in% colnames(scores))
   # rank the scores
   rank_df <-
     scores %>%
-    group_by(all_of(dataset_col, bs_col)) %>%
+    group_by(dataset) %>%
     # rank each testcase score of one submission compared to all submissions
     # the smaller values, the smaller ranks, aka higher ranks
     mutate(
-      testcase_primary_rank = rank(-!!primary_col),
-      testcase_secondary_rank = rank(-!!secondary_col)
+      testcase_primary_rank = rank(-(!!sym(primary_metric))),
+      testcase_secondary_rank = rank(-(!!sym(secondary_metric)))
     ) %>%
     group_by(id, submitterid) %>%
     # get average scores of all testcases ranks in one submission
@@ -83,7 +88,36 @@ rank_submission <- function(scores, # matrix of scores for all testcases all sub
     # rank overall rank on primary, tie breaks by secondary
     arrange(avg_primary_rank, avg_secondary_rank) %>%
     mutate(overall_rank = row_number())
-  rank_df
+}
+
+
+bootstrap <- function(.data,
+                      seq_size,
+                      func,
+                      ...,
+                      .by,
+                      n_iterations=1000,
+                      seed=98109,
+                      ncores=1) {
+  
+  set.seed(seed)
+
+  rs_indices <- lapply(sequence(n_iterations), function(n_bs) {
+    sample(sequence(seq_size), seq_size, replace = TRUE)
+  })
+
+  bs_results <- parallel::mclapply(seq_along(rs_indices), function(n) {
+
+    rs_data <- scores %>%
+      slice(rs_indices[[n]], .by = !!sym(.by))
+
+    bs_result <-  func(rs_data, ...) %>%
+      mutate(n_bs = n) 
+
+    return(bs_result)
+  }, mc.cores = ncores) %>% bind_rows() 
+  
+  return(bs_results)
 }
 
 

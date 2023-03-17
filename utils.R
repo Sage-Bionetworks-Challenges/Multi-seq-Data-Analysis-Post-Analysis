@@ -8,13 +8,7 @@ get_name <- function(syn, id) {
 }
 
 
-get_submissions <- function(view_id) {
-  # set up synapse
-  reticulate::use_condaenv('synapse')
-  synapseclient <- reticulate::import('synapseclient')
-  syn <- synapseclient$Synapse()
-  syn$login(silent = TRUE)
-  
+get_submissions <- function(syn, view_id, eval_id) {
   # query the submission view
   query <- str_glue(
     "
@@ -26,7 +20,8 @@ get_submissions <- function(view_id) {
       submission_scores
     FROM {view_id} 
     WHERE 
-      status = 'ACCEPTED'
+      evaluationid = '{eval_id}'
+      AND status = 'ACCEPTED'
       AND submission_status = 'SCORED' 
       AND submission_phase = 'private'
       AND overall_rank IS NOT NULL
@@ -34,7 +29,7 @@ get_submissions <- function(view_id) {
     "
   )
   
-  # download the submissions
+  # download the submissions ordered by overall rank
   sub_df <- syn$tableQuery(query)$asDataFrame() %>%
     mutate(across(everything(), as.character),
            task = if_else(evaluationid == "9615023", "task1", "task2"),
@@ -44,7 +39,7 @@ get_submissions <- function(view_id) {
 }
 
 
-get_scores <- function(sub_df) {
+get_scores <- function(syn, sub_df) {
   # validate if any valid submission to prevent from failing
   stopifnot(nrow(sub_df) > 0)
 
@@ -67,7 +62,7 @@ get_scores <- function(sub_df) {
 
 rank_submissions <- function(scores, primary_metric, secondary_metric) {
   stopifnot(nrow(scores) > 0)
-  stopifnot(c(primary_metric, secondary_metric, "dataset", "id", "submitterid") %in% colnames(scores))
+  stopifnot(c(primary_metric, secondary_metric, "dataset", "id", "team") %in% colnames(scores))
   # rank the scores
   rank_df <-
     scores %>%
@@ -78,24 +73,24 @@ rank_submissions <- function(scores, primary_metric, secondary_metric) {
       testcase_primary_rank = rank(-(!!sym(primary_metric))),
       testcase_secondary_rank = rank(-(!!sym(secondary_metric)))
     ) %>%
-    group_by(id, submitterid) %>%
+    group_by(id, team) %>%
     # get average scores of all testcases ranks in one submission
     summarise(
-      avg_primary_rank = mean(testcase_primary_rank),
-      avg_secondary_rank = mean(testcase_secondary_rank),
+      primary_rank = mean(testcase_primary_rank),
+      secondary_rank = mean(testcase_secondary_rank),
       .groups = 'drop'
     ) %>%
     # rank overall rank on primary, tie breaks by secondary
-    arrange(avg_primary_rank, avg_secondary_rank) %>%
+    arrange(primary_rank, secondary_rank) %>%
     mutate(overall_rank = row_number())
+
+    return(rank_df)
 }
 
 
 bootstrap <- function(.data,
                       seq_size,
-                      func,
-                      ...,
-                      .by,
+                      .by=NULL,
                       n_iterations=1000,
                       seed=98109,
                       ncores=1) {
@@ -107,36 +102,57 @@ bootstrap <- function(.data,
   })
 
   bs_results <- parallel::mclapply(seq_along(rs_indices), function(n) {
+    
+    rs_data <- .data %>%
+      slice(rs_indices[[n]], .by = !!sym(.by)) %>%
+      mutate(n_bs = n)
 
-    rs_data <- scores %>%
-      slice(rs_indices[[n]], .by = !!sym(.by))
-
-    bs_result <-  func(rs_data, ...) %>%
-      mutate(n_bs = n) 
-
-    return(bs_result)
+    return(rs_data)
   }, mc.cores = ncores) %>% bind_rows() 
   
   return(bs_results)
 }
 
 
-compute_bayes_factor <- function(bootstrapMetricMatrix,
-                                 refPredIndex,
-                                 invertBayes){
+# compute_bayes_factor <- function(bootstrapMetricMatrix,
+#                                  refPredIndex,
+#                                  invertBayes){
   
-  M <- as.data.frame(bootstrapMetricMatrix - bootstrapMetricMatrix[,refPredIndex])
-  K <- apply(M ,2, function(x) {
-    k <- sum(x >= 0)/sum(x < 0)
+#   M <- as.data.frame(bootstrapMetricMatrix - bootstrapMetricMatrix[,refPredIndex])
+#   K <- apply(M ,2, function(x) {
+#     k <- sum(x >= 0)/sum(x < 0)
     
-    # Logic handles whether reference column is the best set of predictions.
-    if(sum(x >= 0) > sum(x < 0)){
-      return(k)
-    }else{
-      return(1/k)
-    }
-  })
-  K[refPredIndex] <- 0
-  if(invertBayes == T){K <- 1/K}
+#     # Logic handles whether reference column is the best set of predictions.
+#     if(sum(x >= 0) > sum(x < 0)){
+#       return(k)
+#     }else{
+#       return(1/k)
+#     }
+#   })
+#   K[refPredIndex] <- 0
+#   if(invertBayes == T){K <- 1/K}
+#   return(K)
+# }
+
+bayes_factor <- function(model, ref) {
+  diff <- model - ref
+
+  pos_n <- sum(diff >= 0)
+  neg_n <- sum(diff < 0)
+
+  # assign to 1 in case all zeros
+  if (pos_n == 0) pos_n <- 1
+  if (neg_n == 0) neg_n <- 1
+
+  K <- pos_n / neg_n
+
+  # reciprocate fraction of K
+  if (K < 1) K <- 1 / K
+  
   return(K)
 }
+
+
+b
+
+

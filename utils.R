@@ -1,3 +1,74 @@
+is_team <- function(syn, uid) {
+  if (missing(syn)) stop('argument "syn" is missing')
+  if (missing(uid)) stop('argument "uid" is missing')
+  out <- tryCatch(
+    {
+      syn$getTeam(uid)
+      return(TRUE)
+    },
+    error = function(e) FALSE
+  )
+  return(out)
+}
+
+
+is_user <- function(syn, uid) {
+  if (missing(syn)) stop('argument "syn" is missing')
+  if (missing(uid)) stop('argument "uid" is missing')
+  out <- tryCatch(
+    {
+      syn$getUserProfile(uid)
+      return(TRUE)
+    },
+    error = function(e) FALSE
+  )
+  return(out)
+}
+
+
+is_member <- function(syn, user_uid, team_uid) {
+  if (missing(user_uid)) stop('argument "user_uid" is missing')
+  if (missing(team_uid)) stop('argument "team_uid" is missing')
+  tryCatch(
+    {
+      member_uids <- reticulate::iterate(syn$getTeamMembers(team_uid)) %>%
+        sapply(., function(member_object) {
+          member <- jsonlite::fromJSON(as.character(member_object))
+          return(member$member$ownerId)
+        })
+      if (length(member_uids) == 0) {
+        return(FALSE)
+      } else {
+        return(user_uid %in% member_uids)
+      }
+    },
+    error = function(e) FALSE
+  )
+}
+
+# check each user is part of existing teams
+validate_users <- function(syn, users, teams, .drop = FALSE) {
+  
+  res <- sapply(users, function(user) {
+
+    if (is_user(syn, user)) { # only validate user
+  
+      team_res <- sapply(teams, function(team) {
+        is_member(syn = syn, user_uid = user, team_uid = team)
+      })
+      return(any(team_res))
+    } else {
+      return(FALSE)
+    }
+  })
+  
+  if (.drop) {
+    res <- res[res]
+  }
+  return(res)
+}
+
+
 get_name <- function(syn, id) {
   name <- tryCatch({
     syn$getUserProfile(id)$userName
@@ -8,22 +79,74 @@ get_name <- function(syn, id) {
 }
 
 
-get_submissions <- function(syn, view_id, eval_id) {
+# resubmit <- function(syn, sub_id, new_eval_id) {
+#   # resubmit the model without minimal requirements for the request
+#   # no teamId, contributors or eligibilityStateHash
+#   # note, it only works for the projects with write access
+#   sub <- syn$getSubmission(sub_id)
+# 
+#   submission <- list(
+#     'evaluationId' = new_eval_id,
+#     'name' = sub_id,
+#     'entityId' = sub["entityId"],
+#     'versionNumber' = sub$get('versionNumber', 1),
+#     'dockerDigest' = sub["dockerDigest"],
+#     'dockerRepositoryName' = sub["dockerRepositoryName"],
+#     'teamId' = NULL,
+#     'contributors' = NULL,
+#     'submitterAlias' = NULL
+#   )
+# 
+#   docker_repo_entity <- syn$restGET(stringr::str_glue('/entity/dockerRepo/id?repositoryName={sub["dockerRepositoryName"]}'))
+#   entity <- syn$get(docker_repo_entity["id"], downloadFile=FALSE)
+#   uri <- stringr::str_glue("/evaluation/submission?etag={entity['etag']}")
+#   
+#   # ignore eligibility
+#   # eligibility <- syn$restGET(stringr::str_glue('/evaluation/{sub["evaluationId"]}/team/{sub["teamId"]}/submissionEligibility'))
+#   # uri <- stringr::str_glue("{uri}&submissionEligibilityHash={eligibility['eligibilityStateHash']}")
+#   submitted <- syn$restPOST(uri, jsonlite::toJSON(submission, auto_unbox = TRUE, null = "null"))
+#   return(submitted)
+# }
+
+
+# TODO: combine copy_model() with resubmit()
+copy_model <- function(image, project_id, name, tag="latest") {
+  
+  # get new project repo
+  docker_repo <- stringr::str_glue("docker.synapse.org/{project_id}")
+  
+  # TODO: add validation on image string
+  
+  # get docker image names
+  repo_name <- file.path(docker_repo, name)
+  new_image <- stringr::str_glue("{repo_name}:{tag}")
+  
+  system(stringr::str_glue("docker pull {image}"))
+  system(stringr::str_glue("docker tag {image} {new_image}"))
+  system(stringr::str_glue("docker push {new_image}"))
+  system(stringr::str_glue("docker image rm {image} {new_image}"))
+  
+  return(list(repo_name = repo_name, tag = tag))
+}
+
+
+get_ranked_submissions <- function(syn, view_id, eval_ids, phase) {
+  match.arg(phase, c("public", "private"))
   # query the submission view
-  query <- str_glue(
+  query <- stringr::str_glue(
     "
     SELECT 
       id,
       submitterid,
       evaluationid,
       prediction_fileid,
-      submission_scores
+      submission_scores,
+      overall_rank
     FROM {view_id} 
     WHERE 
-      evaluationid = '{eval_id}'
-      AND status = 'ACCEPTED'
+      status = 'ACCEPTED'
       AND submission_status = 'SCORED' 
-      AND submission_phase = 'private'
+      AND submission_phase = '{phase}'
       AND overall_rank IS NOT NULL
     ORDER BY overall_rank
     "
@@ -31,8 +154,8 @@ get_submissions <- function(syn, view_id, eval_id) {
   
   # download the submissions ordered by overall rank
   sub_df <- syn$tableQuery(query)$asDataFrame() %>%
+    filter(evaluationid %in% eval_ids) %>%
     mutate(across(everything(), as.character),
-           task = if_else(evaluationid == "9615023", "task1", "task2"),
            team = sapply(submitterid, get_name, syn = syn),
     )
   return(sub_df)
@@ -151,8 +274,5 @@ bayes_factor <- function(model, ref) {
   
   return(K)
 }
-
-
-b
 
 

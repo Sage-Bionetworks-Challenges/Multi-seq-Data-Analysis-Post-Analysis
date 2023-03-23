@@ -15,7 +15,7 @@ syn$login(silent = TRUE)
 # download the submissions
 view_id <- "syn51157023"
 task_eval_id <- "9615023"
-sub_df <- get_submissions(syn, view_id, task_eval_id)
+sub_df <- get_ranked_submissions(syn, view_id, task_eval_id, "private")
 
 # label model names
 baseline_magic <- "9732066"

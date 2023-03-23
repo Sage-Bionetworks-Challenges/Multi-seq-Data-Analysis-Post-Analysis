@@ -13,7 +13,6 @@ syn <- synapseclient$Synapse()
 syn$login(silent = TRUE)
 
 
-
 # TODO: set better args
 dry_run <- FALSE
 view_id <- "syn51157023"
@@ -59,7 +58,7 @@ if (nrow(task_sub_df) > 0) {
   message("\nRe-submitting submissions from evluation ", dQuote(eval_id), " and ", phase, " phase ...")
 
   sub_ids <- unique(task_sub_df$id)
-  for (n in seq_along(sub_ids)[1]) {
+  for (n in seq_along(sub_ids)) {
 
     message(str_glue("Submitting {dQuote(sub_ids[n])} ({n} of {nrow(task_sub_df)}) ..."))
 

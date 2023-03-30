@@ -78,7 +78,7 @@ p_top1 <- bf_df %>%
   )),
   model_name = factor(model_name, levels = unique(sub_df$model_name))) %>% 
   ggplot(aes(model_name, 1/ranks, color = groups)) + 
-  labs(title = str_glue("Bootstrapped submissions agsinst Top Performers"), 
+  labs(title = str_glue("Bootstrapped submissions against Top Performers"), 
        subtitle = "NRMSE",
        x = NULL, y = NULL, color = NULL) +
   geom_boxplot(lwd = 1.2, fatten = 1) + 
@@ -139,7 +139,7 @@ p_magic1 <- bf_df %>%
   )),
   model_name = factor(model_name, levels = unique(sub_df$model_name))) %>% 
   ggplot(aes(model_name, 1/ranks, color = groups)) + 
-  labs(title = str_glue("Bootstrapped submissions agsinst Baseline MAGIC"), 
+  labs(title = str_glue("Bootstrapped submissions against Baseline MAGIC"), 
        subtitle = "NRMSE",
        x = NULL, y = NULL, color = NULL) +
   geom_boxplot(lwd = 1.2, fatten = 1) + 
@@ -182,7 +182,8 @@ p_magic2 <- bf_df %>%
     plot.title = element_text(size=22),
     axis.text.x.bottom = element_text(size = 18),
     axis.title.y=element_text(size = 24), 
-    axis.text.y=element_text(size = 18))
+    axis.text.y=element_text(size = 18),
+    legend.position = "none")
 
 p_magic <- p_magic1 / p_magic2 + plot_layout(guides = "collect")
 
@@ -197,7 +198,7 @@ p_dp1 <- bf_df %>%
   )),
   model_name = factor(model_name, levels = unique(sub_df$model_name))) %>% 
   ggplot(aes(model_name, 1/ranks, color = groups)) + 
-  labs(title = str_glue("Bootstrapped submissions agsinst Baseline DeepImpute"), 
+  labs(title = str_glue("Bootstrapped submissions against Baseline DeepImpute"), 
        subtitle = "NRMSE",
        x = NULL, y = NULL, color = NULL) +
   geom_boxplot(lwd = 1.2, fatten = 1) + 
@@ -222,7 +223,6 @@ p_dp2 <- bf_df %>%
     secondary_bf < 5 & (id != baseline_deepimpute)  ~ "Bayes Factor < 5",
     secondary_bf >= 5 & (id != baseline_deepimpute) ~ "Bayes Factor >= 5",
     id == baseline_deepimpute ~ "Baseline DeepImpute"
-    
   )),
   model_name = factor(model_name, levels = arrange(., metrics) %>% pull(model_name) %>% unique())) %>% 
   ggplot(aes(model_name, 1/ranks, color = groups)) + 

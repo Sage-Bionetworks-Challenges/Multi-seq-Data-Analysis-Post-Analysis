@@ -52,7 +52,7 @@ bf_df <- lapply(seq_along(ref_ids), function(i) {
   ref_ranks <- rank_df %>% filter(id == ref_ids[i])
   rank_df %>%
     group_by(id) %>%
-    mutate(primary_bf = bayes_factor(primary_rank, ref_ranks$primary_rank),
+    summarise(primary_bf = bayes_factor(primary_rank, ref_ranks$primary_rank),
            secondary_bf = bayes_factor(secondary_rank, ref_ranks$secondary_rank),
            ref_model = ref_names[i])
 }) %>% 
@@ -72,7 +72,7 @@ p_top1 <- bf_df %>%
   )),
   model_name = factor(model_name, levels = unique(sub_df$model_name))) %>% 
   ggplot(aes(model_name, 1/ranks, color = groups)) + 
-  labs(title = str_glue("Bootstrapped submissions agsinst Top Performers"), 
+  labs(title = str_glue("Bootstrapped submissions against Top Performers"), 
        subtitle = "Summed Scores (jaccard_similarity + recall_ubiquitous + recall_tss [+ recall_cellspecific for mouse data])",
        x = NULL, y = NULL, color = NULL) +
   geom_boxplot(lwd = 1.2, fatten = 1) + 
@@ -131,7 +131,7 @@ p_macs2.1 <- bf_df %>%
   )),
   model_name = factor(model_name, levels = unique(sub_df$model_name))) %>% 
   ggplot(aes(model_name, 1/ranks, color = groups)) + 
-  labs(title = str_glue("Bootstrapped submissions agsinst Baseline MAGIC"), 
+  labs(title = str_glue("Bootstrapped submissions against Baseline MAGIC"), 
        subtitle = "Summed Scores (jaccard_similarity + recall_ubiquitous + recall_tss [+ recall_cellspecific for mouse data])",
        x = NULL, y = NULL, color = NULL) +
   geom_boxplot(lwd = 1.2, fatten = 1) + 

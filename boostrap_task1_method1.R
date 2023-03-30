@@ -45,7 +45,7 @@ boot_df <- bootstrap(.data = scores_df,
 
 # rank submissions for all bootstraps
 rank_df <- boot_df %>%
-  nest(scores = c(metrics_lookup[1], metrics_lookup[2], dataset, id, team), .by = bs_n) %>% 
+  nest(scores = c(metrics_lookup[1], metrics_lookup[2], dataset, id, team), .by = bs_n) %>%
   mutate(ranks = parallel::mclapply(scores, rank_submissions, metrics_lookup[1], metrics_lookup[2], mc.cores = ncores)) %>%
   unnest(cols = ranks) %>%
   select(-scores) %>%

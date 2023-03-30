@@ -265,7 +265,7 @@ bootstrap <- function(.data,
                       ncores = 1) {
   set.seed(seed)
 
-  rs_indices <- lapply(sequence(n_iterations), function(n_bs) {
+  rs_indices <- lapply(sequence(n_iterations), function(i) {
     sample(sequence(seq_size), seq_size, replace = TRUE)
   })
 

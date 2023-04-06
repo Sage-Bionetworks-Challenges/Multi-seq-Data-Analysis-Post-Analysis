@@ -73,10 +73,10 @@ calculate_spearman <- function(.data, pseudobulk = FALSE, na.rm = TRUE) {
   if (pseudobulk) {
     true_rs <- rowSums(true)
     pred_rs <- rowSums(pred)
-    spearman <- cor(true_rs, pred_rs, method = "spearman")
+    spearman <- cor.test(true_rs, pred_rs, method = "spearman")$estimate
     if (n_na_genes > 0) spearman <- c(spearman, rep(0, n_na_genes))
   } else {
-    spearman <- sapply(1:nrow(true), function(i) cor(true[i, ], pred[i, ], method = "spearman"))
+    spearman <- sapply(1:nrow(true), function(i) cor.test(true[i, ], pred[i, ], method = "spearman")$estimate)
     if (n_na_genes > 0) spearman <- c(spearman, rep(0, n_na_genes))
   }
   

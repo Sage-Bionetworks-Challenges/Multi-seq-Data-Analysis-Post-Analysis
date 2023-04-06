@@ -2,6 +2,7 @@ library(ggplot2)
 library(dplyr) # 1.1.0
 library(tidyr) # 1.3.0
 library(stringr)
+library(patchwork)
 
 source("utils.R")
 ncores <- parallel::detectCores() - 1
@@ -52,7 +53,7 @@ bf_df <- lapply(seq_along(ref_ids), function(i) {
   ref_ranks <- rank_df %>% filter(id == ref_ids[i])
   rank_df %>%
     group_by(id) %>%
-    summarise(primary_bf = bayes_factor(primary_rank, ref_ranks$primary_rank),
+    mutate(primary_bf = bayes_factor(primary_rank, ref_ranks$primary_rank),
            secondary_bf = bayes_factor(secondary_rank, ref_ranks$secondary_rank),
            ref_model = ref_names[i])
 }) %>% 
@@ -60,123 +61,121 @@ bf_df <- lapply(seq_along(ref_ids), function(i) {
   gather("metrics", "ranks", c(primary_rank, secondary_rank))
 
 # plotting
-library(patchwork)
-
 # top performer
 p_top1 <- bf_df %>%
   filter(ref_model == "top_performer", metrics == "primary_rank") %>%
-  mutate(groups = as.factor(case_when(
-    primary_bf < 5 & (id != top_performer)  ~ "Bayes Factor < 5",
-    primary_bf >= 5 & (id != top_performer)  ~ "Bayes Factor >= 5",
-    id == top_performer ~ "Top Performer"
-  )),
+  mutate(groups = factor(
+    case_when(
+      primary_bf > 0 & primary_bf <= 5  ~ "< 5",
+      primary_bf > 5 & primary_bf <= 30 ~ "5 - 30",
+      primary_bf > 30 ~ "> 30",
+      TRUE ~ "Ref: Top Performer"
+    ), 
+    levels = c("Ref: Top Performer", "< 5", "5 - 30", "> 30")),
   model_name = factor(model_name, levels = unique(sub_df$model_name))) %>% 
   ggplot(aes(model_name, 1/ranks, color = groups)) + 
-  labs(title = str_glue("Bootstrapped submissions against Top Performers"), 
-       subtitle = "Summed Scores (jaccard_similarity + recall_ubiquitous + recall_tss [+ recall_cellspecific for mouse data])",
-       x = NULL, y = NULL, color = NULL) +
+  labs(x = NULL, y = "1 / (Bootstrapped Ranks of Summed Scores)", color = "Bayes Factor") +
   geom_boxplot(lwd = 1.2, fatten = 1) + 
   scale_x_discrete(limits=rev) +
   coord_flip() +
   theme_classic(base_size = 16) + 
   scale_color_manual(values = c(
-    "Top Performer" = "#FE4365", 
-    'Bayes Factor < 5' = '#FC9D9A', 
-    "Bayes Factor >= 5" = "#C8C8A9"
-  )) +
-  theme(
-    text = element_text(size = 16),
-    plot.title = element_text(size=22),
-    axis.text.x.bottom = element_text(size = 18),
-    axis.title.y=element_text(size = 24), 
-    axis.text.y=element_text(size = 18))
+    "Ref: Top Performer" = "#A81A50", 
+    '< 5' = '#F94551', 
+    "5 - 30" = "#FCB335",
+    "> 30" = "#32A0B5"
+  ), drop = FALSE) +
+  theme(text = element_text(size = 16),
+        axis.title = element_text(size = 18))
 
 # 2rd metric
 p_top2 <- bf_df %>%
   filter(ref_model == "top_performer", metrics == "secondary_rank") %>%
-  mutate(groups = as.factor(case_when(
-    secondary_bf < 5 & (id != top_performer)  ~ "Bayes Factor < 5",
-    secondary_bf >= 5 & (id != top_performer) ~ "Bayes Factor >= 5",
-    id == top_performer ~ "Top Performer"
-    
-  )),
+  mutate(groups = factor(
+    case_when(
+      secondary_bf > 0 & secondary_bf <= 5  ~ "< 5",
+      secondary_bf > 5 & secondary_bf <= 30 ~ "5 - 30",
+      secondary_bf > 30 ~ "> 30",
+      TRUE ~ "Ref: Top Performer"
+    ), 
+    levels = c("Ref: Top Performer", "< 5", "5 - 30", "> 30")),
   model_name = factor(model_name, levels = arrange(., metrics) %>% pull(model_name) %>% unique())) %>% 
   ggplot(aes(model_name, 1/ranks, color = groups)) + 
-  labs(subtitle = "Jaccard similarity",
-       x = NULL, y = "1 / Bootstrapped Ranks", color = NULL) +
-  geom_boxplot(lwd = 1.2, fatten = 1) + 
-  scale_x_discrete(limits=rev) +
-  coord_flip() +
-  theme_classic(base_size = 16) + 
-  scale_color_manual(values = c(
-    "Top Performer" = "#FE4365", 
-    'Bayes Factor < 5' = '#FC9D9A', 
-    "Bayes Factor >= 5" = "#C8C8A9")) +
-  theme(
-    text = element_text(size = 16),
-    plot.title = element_text(size=22),
-    axis.text.x.bottom = element_text(size = 18),
-    axis.title.y=element_text(size = 24), 
-    axis.text.y=element_text(size = 18))
+  labs(x = NULL, y = "1 / (Bootstrapped Ranks of Jaccard similarity)", color = "Bayes Factor") +
+    geom_boxplot(lwd = 1.2, fatten = 1) + 
+    scale_x_discrete(limits=rev) +
+    coord_flip() +
+    theme_classic(base_size = 16) + 
+    scale_color_manual(values = c(
+      "Ref: Top Performer" = "#A81A50", 
+      '< 5' = '#F94551', 
+      "5 - 30" = "#FCB335",
+      "> 30" = "#32A0B5"
+    ), drop = FALSE) +
+    theme(text = element_text(size = 16),
+          axis.title = element_text(size = 18))
 
-p_top <- p_top1 / p_top2 + plot_layout(guides = "collect")
+p_top <- p_top1 / p_top2 + 
+  plot_layout(guides = "collect") & 
+  theme(legend.position = "top", legend.direction = "horizontal")
 
 ### Baseline macs2
 p_macs2.1 <- bf_df %>%
   filter(ref_model == "baseline_macs2", metrics == "primary_rank") %>%
-  mutate(groups = as.factor(case_when(
-    primary_bf < 5 & (id != baseline_macs2)  ~ "Bayes Factor < 5",
-    primary_bf >= 5 & (id != baseline_macs2)  ~ "Bayes Factor >= 5",
-    id == baseline_macs2 ~ "Baseline Macs2"
-  )),
+  mutate(groups = factor(
+    case_when(
+      primary_bf > 0 & primary_bf <= 5  ~ "< 5",
+      primary_bf > 5 & primary_bf <= 30 ~ "5 - 30",
+      primary_bf > 30 ~ "> 30",
+      TRUE ~ "Reference"
+    ), 
+    levels = c("Reference", "< 5", "5 - 30", "> 30")),
   model_name = factor(model_name, levels = unique(sub_df$model_name))) %>% 
   ggplot(aes(model_name, 1/ranks, color = groups)) + 
-  labs(title = str_glue("Bootstrapped submissions against Baseline MAGIC"), 
-       subtitle = "Summed Scores (jaccard_similarity + recall_ubiquitous + recall_tss [+ recall_cellspecific for mouse data])",
-       x = NULL, y = NULL, color = NULL) +
+  labs(x = NULL, y = "1 / (Bootstrapped Ranks of Summed Scores)", color = "Bayes Factor") +
   geom_boxplot(lwd = 1.2, fatten = 1) + 
   scale_x_discrete(limits=rev) +
   coord_flip() +
   theme_classic(base_size = 16) + 
   scale_color_manual(values = c(
-    "Baseline Macs2" = "#FE4365", 
-    'Bayes Factor < 5' = '#FC9D9A', 
-    "Bayes Factor >= 5" = "#C8C8A9")) +
-  theme(
-    text = element_text(size = 16),
-    plot.title = element_text(size=22),
-    axis.text.x.bottom = element_text(size = 18),
-    axis.title.y=element_text(size = 24), 
-    axis.text.y=element_text(size = 18))
+    "Reference" = "#A81A50", 
+    '< 5' = '#F94551', 
+    "5 - 30" = "#FCB335",
+    "> 30" = "#32A0B5"
+  ), drop = FALSE) +
+  theme(text = element_text(size = 16),
+        axis.title = element_text(size = 18))
 
 # 2rd metric
 p_macs2.2 <- bf_df %>%
   filter(ref_model == "baseline_macs2", metrics == "secondary_rank") %>%
-  mutate(groups = as.factor(case_when(
-    secondary_bf < 5 & (id != baseline_macs2)  ~ "Bayes Factor < 5",
-    secondary_bf >= 5 & (id != baseline_macs2) ~ "Bayes Factor >= 5",
-    id == baseline_macs2 ~ "Baseline Macs2"
-  )),
+  mutate(groups = factor(
+    case_when(
+      secondary_bf > 0 & secondary_bf <= 5  ~ "< 5",
+      secondary_bf > 5 & secondary_bf <= 30 ~ "5 - 30",
+      secondary_bf > 30 ~ "> 30",
+      TRUE ~ "Reference"
+    ), 
+    levels = c("Reference", "< 5", "5 - 30", "> 30")),
   model_name = factor(model_name, levels = arrange(., metrics) %>% pull(model_name) %>% unique())) %>% 
   ggplot(aes(model_name, 1/ranks, color = groups)) + 
-  labs(subtitle = "Jaccard similarity",
-       x = NULL, y = "1 / Bootstrapped Ranks", color = NULL) +
+  labs(x = NULL, y = "1 / (Bootstrapped Ranks of Jaccard similarity)", color = "Bayes Factor") +
   geom_boxplot(lwd = 1.2, fatten = 1) + 
   scale_x_discrete(limits=rev) +
   coord_flip() +
   theme_classic(base_size = 16) + 
   scale_color_manual(values = c(
-    "Baseline Macs2" = "#FE4365", 
-    'Bayes Factor < 5' = '#FC9D9A', 
-    "Bayes Factor >= 5" = "#C8C8A9")) +
-  theme(
-    text = element_text(size = 16),
-    plot.title = element_text(size=22),
-    axis.text.x.bottom = element_text(size = 18),
-    axis.title.y=element_text(size = 24), 
-    axis.text.y=element_text(size = 18))
+    "Reference" = "#A81A50", 
+    '< 5' = '#F94551', 
+    "5 - 30" = "#FCB335",
+    "> 30" = "#32A0B5"
+  ), drop = FALSE) +
+  theme(text = element_text(size = 16),
+        axis.title = element_text(size = 18))
 
-p_macs2 <- p_macs2.1 / p_macs2.2 + plot_layout(guides = "collect")
+p_macs2 <- p_macs2.1 / p_macs2.2 + 
+  plot_layout(guides = "collect") & 
+  theme(legend.position = "top", legend.direction = "horizontal")
 
 pdf(file="sc2_bootstrap_bayes_factor.pdf", width = 18, height = 12)
 p_top; p_macs2

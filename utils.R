@@ -110,7 +110,6 @@ get_name <- function(syn, id) {
 # }
 
 
-# TODO: combine copy_model() with resubmit()
 copy_model <- function(image, project_id, name, tag = "latest") {
   
   # get new project repo

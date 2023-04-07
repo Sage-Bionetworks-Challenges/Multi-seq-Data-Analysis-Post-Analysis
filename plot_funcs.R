@@ -57,3 +57,22 @@ bootstrap_boxplot <- function(.data,
     scale_color_manual(values = col_values, drop = FALSE)
 }
 
+
+
+ensemble_ranks_line <- function(.data, 
+                                .x, 
+                                .y, 
+                                .group # group column used to facet lines
+                                ) {
+  
+  .x <- enquo(.x)
+  .y <- enquo(.y)
+  .group <- enquo(.group)
+  
+  ggplot(.data, aes(!!.x, !!.y, color = !!.group, group = !!.group)) +
+    geom_line(linewidth = 1) +
+    scale_x_discrete(guide = guide_axis(angle = 45)) + 
+    labs(x = quo_name(.x), y = quo_name(.y), color = quo_name(.group)) +
+    theme_bw(base_size = 16)
+}
+

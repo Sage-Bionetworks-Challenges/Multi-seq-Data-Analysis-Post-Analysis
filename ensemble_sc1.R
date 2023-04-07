@@ -1,4 +1,3 @@
-# download the submissions
 suppressPackageStartupMessages({
   library(ggplot2)
   library(dplyr)
@@ -9,25 +8,32 @@ suppressPackageStartupMessages({
   library(ggsci)
 })
 
-source("metrics.R")
 source("utils.R")
+source("bootstrap_funcs.R")
+source("plot_funcs.R")
+source("metrics.R")
+
 ncores <- parallel::detectCores() - 1
 
-# set up synapse
+
+# Set up synapse ----------------------------------------------------------
 reticulate::use_condaenv('synapse')
 synapseclient <- reticulate::import('synapseclient')
 syn <- synapseclient$Synapse()
 syn$login(silent = TRUE)
 
 
-# download the submissions
+# Download submissions ----------------------------------------------------
 task_n <- "task1"
 view_id <- "syn51157023"
 eval_id <- "9615023"
 gs_id <- "syn34612394"
-# each team should be ranked only on the best submission, aka one submission per team from this table
+metrics_lookup <- c("nrmse_score", "spearman_score")
+
+# query submissions
 all_sub_df <- get_ranked_submissions(syn, view_id, eval_id, "private")
 
+# label model names
 baseline_magic <- "9732066"
 baseline_deepimpute <- "9732074"
 top_performer <- all_sub_df$id[1]
@@ -35,19 +41,24 @@ all_sub_df <- all_sub_df %>% mutate(model_name = case_when(id == baseline_magic 
                                                            id == baseline_deepimpute ~ "Baseline DeepImpute",
                                                            TRUE ~ as.character(team)))
 
-# exclude the baseline for ensemble analysis
+
+# Ensemble analysis ----------------------------------------------------
+
+# exclude the baseline to run ensemble
 sub_df <- all_sub_df %>% filter(!id %in% c(baseline_magic, baseline_deepimpute))
 
 # download the ground truth
 gs_path <- syn$get(gs_id)["path"]
 all_gs <- readRDS(gs_path)
 
-# iterate each submission to perform bootstrapping
+# prepare
 all_scores <- data.table()
 n <- 0
 temp_dir <- "temp"
 dir.create(temp_dir, showWarnings = FALSE)
 
+message("!!!!!!!!!!!!! Ensemble steps below requires high I/O")
+message("!!!!!!!!!!!!! and high computing due to the large number of scrna data")
 while(n < nrow(sub_df)) { 
   
   sub_n <- n + 1
@@ -133,17 +144,24 @@ while(n < nrow(sub_df)) {
   }, mc.cores = ncores, ignore.interactive = TRUE) %>%
     rbindlist(use.names = TRUE)
   
+  if (nrow(scores_df) != length(pred_files)) stop("Ensemble process failed on ", sub_id, ".\n",
+                                                  "If still not work, try to do ensemble one submission at a time manaully.")
   all_scores <- rbindlist(list(all_scores, scores_df), use.names = TRUE)
   
+  # save all scores in case partially failed
+  # could add cache step, but no time for now
+  saveRDS(all_scores, "ensemble_all_scores_sc1.rds")
   n <- n + 1
   gc(); gc()
 }
+
+# remove the temp dir after the ensemble process completes
 # unlink(temp_dir, recursive = TRUE, force = TRUE)
 
-saveRDS(all_scores, "ensemble_all_scores_sc1.rds")
+# read the ensembled scores
 all_scores <- readRDS("ensemble_all_scores_sc1.rds")
 
-# now add baseline scores
+# add back baseline scores
 baseline_scores <- all_sub_df %>% 
   filter(id %in% c(baseline_magic, baseline_deepimpute)) %>%
   get_scores(syn, sub_df = .) %>%
@@ -152,11 +170,12 @@ baseline_scores <- all_sub_df %>%
 
 all_scores <- bind_rows(all_scores, baseline_scores)
 
-all_scores$nrmse_score <- -all_scores$nrmse_score
 
-# rank submissions all ensemble models and baseline
+# Rank new submissions --------------------------------------------------------
+# rank submissions all ensemble models and baselines
+# will be used to plot later
 rank_df <- all_scores %>%
-  rank_submissions("nrmse_score", "spearman_score", "ensemble_label") %>%
+  rank_submissions(metrics_lookup[1], metrics_lookup[2], "ensemble_label") %>%
   mutate(team = gsub("\\d? \\+ (.*)$", "\\1", ensemble_label),
          ensemble_label = factor(ensemble_label, levels = c("0 + GOAL_LAB", 
                                                             "1 + DLS5", 
@@ -165,30 +184,23 @@ rank_df <- all_scores %>%
                                                             "3 + Metformin-121",
                                                             "Baseline DeepImpute")))
 
-# plot
-# pal_simpsons(alpha = 0.9)(9)
+
+# Plotting ranks over ensembled models ------------------------------------
 my_labels <- c(primary_rank = "NRMSE", secondary_rank = "Spearman Correlation")
 my_colors <- c(primary_rank = "#709AE1E5", secondary_rank = "#FED439E5")
-rank_line_p <- ggplot(rank_df %>% gather("metrics", "ranks", c(2:3)),
-       aes(ensemble_label, 1/ranks, color = metrics, group = metrics)) +
-  geom_line(linewidth = 1) +
-  # ggrepel::geom_label_repel(data = . %>% filter(overall_rank < 3, metrics == "primary_rank"),
-  #                           aes(label = team), box.padding = unit(0.4, "lines"),
-  #                           point.padding = unit(0.2, "lines")) +
+rank_line_p <- rank_df %>% 
+  gather("metrics", "ranks", c(2:3)) %>%
+  mutate(ranks = 1 / ranks) %>%
+  ensemble_ranks_line(ensemble_label, ranks, metrics) +
   scale_color_manual(values = my_colors, labels = my_labels) +
-  scale_x_discrete(guide = guide_axis(angle = 45)) + 
   labs(x = NULL, y = "1 / Ranks", color = "Metrics") +
-  theme_bw(base_size = 18) + 
   theme(legend.position = c(0.95, 0.95), legend.justification = c("right", "top"),
         panel.grid.minor.y = element_blank(),
         text = element_text(size = 18),
         axis.title = element_text(size = 20))
 
-  
-## boot
-# get corresponding metric names and for each task
-metrics_lookup <- c("nrmse_score", "spearman_score")
 
+# Bootstrapping -----------------------------------------------------------
 # bootstrapping the rankings
 boot_df <- bootstrap(.data = all_scores,
                      seq_size = length(unique(all_scores$dataset)),
@@ -210,71 +222,34 @@ bf_df <- boot_rank_df %>%
   group_by(ensemble_label) %>%
   mutate(primary_bf = bayes_factor(primary_rank, ref_ranks$primary_rank),
          secondary_bf = bayes_factor(secondary_rank, ref_ranks$secondary_rank)) %>%
-  gather("metrics", "ranks", c(primary_rank, secondary_rank))
+  gather("metrics", "ranks", c(primary_rank, secondary_rank)) %>%
+  mutate(ensemble_label = factor(ensemble_label, 
+                                 levels = c("0 + GOAL_LAB", 
+                                            "1 + DLS5", 
+                                            "2 + LDExplore",
+                                            "Baseline MAGIC",
+                                            "3 + Metformin-121",
+                                            "Baseline DeepImpute")))
 
-# plot
+
+
+# Plotting ----------------------------------------------------------------
+# against top performer
 p_top1 <- bf_df %>%
   filter(metrics == "primary_rank") %>%
-  mutate(groups = factor(
-    case_when(
-      primary_bf > 0 & primary_bf <= 5  ~ "< 5",
-      primary_bf > 5 & primary_bf <= 30 ~ "5 - 30",
-      primary_bf > 30 ~ "> 30",
-      TRUE ~ "Reference"
-    ), 
-    levels = c("Reference", "< 5", "5 - 30", "> 30")),
-  ensemble_label = factor(ensemble_label, levels = c("0 + GOAL_LAB", 
-                                                     "1 + DLS5", 
-                                                     "2 + LDExplore",
-                                                     "Baseline MAGIC",
-                                                     "3 + Metformin-121",
-                                                     "Baseline DeepImpute"))) %>%
-  ggplot(aes(ensemble_label, 1/ranks, color = groups)) + 
-  labs(x = NULL, y = "1 / (Bootstrapped ranks of NRMSE)", color = "Bayes Factor") +
-  geom_boxplot(lwd = 1.2, fatten = 1) + 
-  scale_x_discrete(limits=rev) +
-  coord_flip() +
-  theme_classic(base_size = 16) + 
-  scale_color_manual(values = c(
-    "Reference" = "#A81A50", 
-    '< 5' = '#F94551', 
-    "5 - 30" = "#FCB335",
-    "> 30" = "#32A0B5"
-  ), drop = FALSE) +
-  theme(text = element_text(size = 16),
-        axis.title = element_text(size = 18))
+  mutate(ranls = 1 / ranks) %>%
+  bootstrap_boxplot(ensemble_label, ranks, primary_bf, 
+                    bf_cutoffs=c(5, 30), ref_label = "Ref: Top Performer") +
+  labs(x = NULL, y = "1 / (Bootstrapped Ranks of NRMSE)", color = "Bayes Factor")
 
 p_top2 <- bf_df %>%
   filter(metrics == "secondary_rank") %>%
-  mutate(groups = factor(
-    case_when(
-      secondary_bf > 0 & secondary_bf <= 5  ~ "< 5",
-      secondary_bf > 5 & secondary_bf <= 30 ~ "5 - 30",
-      secondary_bf > 30 ~ "> 30",
-      TRUE ~ "Reference"
-    ), 
-    levels = c("Reference", "< 5", "5 - 30", "> 30")),
-    ensemble_label = factor(ensemble_label, levels = c("0 + GOAL_LAB", 
-                                                       "1 + DLS5", 
-                                                       "2 + LDExplore",
-                                                       "Baseline MAGIC",
-                                                       "3 + Metformin-121",
-                                                       "Baseline DeepImpute"))) %>%
-  ggplot(aes(ensemble_label, 1/ranks, color = groups)) + 
-  labs(x = NULL, y = "1 / (Bootstrapped Ranks of Spearman Correlation)", color = "Bayes Factor") +
-  geom_boxplot(lwd = 1.2, fatten = 1) + 
-  scale_x_discrete(limits=rev) +
-  coord_flip() +
-  theme_classic(base_size = 16) + 
-  scale_color_manual(values = c(
-    "Reference" = "#A81A50", 
-    '< 5' = '#F94551', 
-    "5 - 30" = "#FCB335",
-    "> 30" = "#32A0B5"
-  ), drop = FALSE) +
-  theme(text = element_text(size = 16),
-        axis.title = element_text(size = 18))
+  mutate(ranls = 1 / ranks) %>%
+  bootstrap_boxplot(ensemble_label, ranks, primary_bf, 
+                    bf_cutoffs=c(5, 30), ref_label = "Ref: Top Performer") +
+  labs(x = NULL, y = "1 / (Bootstrapped Ranks of Spearman Correlation)", color = "Bayes Factor")
 
+# saving all plots
 pdf(file="sc1_ensemble_analysis.pdf", width = 16, height = 10)
 rank_line_p;
 p_top1 / p_top2 + 

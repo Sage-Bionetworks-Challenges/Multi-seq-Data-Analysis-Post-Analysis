@@ -5,17 +5,24 @@ library(stringr)
 library(patchwork)
 
 source("utils.R")
+source("bootstrap_funcs.R")
+source("plot_funcs.R")
 ncores <- parallel::detectCores() - 1
 
-# set up synapse
+
+# Set up synapse ----------------------------------------------------------
 reticulate::use_condaenv('synapse')
 synapseclient <- reticulate::import('synapseclient')
 syn <- synapseclient$Synapse()
 syn$login(silent = TRUE)
 
-# download the submissions
+
+# Download submissions ----------------------------------------------------
 view_id <- "syn51157023"
 eval_id <- "9615023"
+metrics_lookup <- c("nrmse_score", "spearman_score")
+
+# query submissions
 sub_df <- get_ranked_submissions(syn, view_id, eval_id, "private")
 
 # label model names
@@ -26,17 +33,16 @@ sub_df <- sub_df %>% mutate(model_name = case_when(id == baseline_magic ~ "Basel
                                                    id == baseline_deepimpute ~ "Baseline DeepImpute",
                                                    TRUE ~ as.character(team)))
 
-# get all scores
-scores_df <- get_scores(syn, sub_df)
 
-# get corresponding metric names and for each task
-metrics_lookup <- c("nrmse_score", "spearman_score")
-#   metrics_lookup <- c("summed_score", "jaccard_similarity")
+# Retrieve scores ---------------------------------------------------------
+scores_df <- get_scores(syn, sub_df)
 
 # correct the direction of nrmse
 scores_df$nrmse_score <- -scores_df$nrmse_score
 
-# bootstrapping the rankings
+
+# Bootstrapping -----------------------------------------------------------
+# bootstrapping the test case's scores
 boot_df <- bootstrap(.data = scores_df,
                       seq_size = length(unique(scores_df$dataset)),
                       .by = "id",
@@ -44,7 +50,7 @@ boot_df <- bootstrap(.data = scores_df,
                       seed = 98109,
                       ncores = ncores)
 
-# rank submissions for all bootstraps
+# re-rank bootstrapped submissions
 rank_df <- boot_df %>%
   nest(scores = c(metrics_lookup[1], metrics_lookup[2], dataset, id, team), .by = bs_n) %>%
   mutate(ranks = parallel::mclapply(scores, rank_submissions, metrics_lookup[1], metrics_lookup[2], mc.cores = ncores)) %>%
@@ -52,197 +58,73 @@ rank_df <- boot_df %>%
   select(-scores) %>%
   mutate(model_name = sub_df$model_name[match(id, sub_df$id)])
 
-# compute bayes factor between each model
+
+# Compute bayes factors ---------------------------------------------------
+# compute bayes factor of each model against reference
 ref_ids <- c(baseline_magic, baseline_deepimpute, top_performer)
 ref_names <- c("baseline_magic", "baseline_deepimpute", "top_performer")
 bf_df <- lapply(seq_along(ref_ids), function(i) {
   ref_ranks <- rank_df %>% filter(id == ref_ids[i])
   rank_df %>%
     group_by(id) %>%
-    summarise(primary_bf = bayes_factor(primary_rank, ref_ranks$primary_rank),
+    mutate(primary_bf = bayes_factor(primary_rank, ref_ranks$primary_rank),
            secondary_bf = bayes_factor(secondary_rank, ref_ranks$secondary_rank),
            ref_model = ref_names[i])
   }) %>% 
   bind_rows() %>%
-  gather("metrics", "ranks", c(primary_rank, secondary_rank))
+  gather("metrics", "ranks", c(primary_rank, secondary_rank)) %>%
+  mutate(model_name = factor(model_name, levels = unique(sub_df$model_name)),
+         ranks = 1/ranks)
 
-# plotting
-# top performer
+
+# Plotting ----------------------------------------------------------------
+# against top performer
 p_top1 <- bf_df %>%
   filter(ref_model == "top_performer", metrics == "primary_rank") %>%
-  mutate(groups = factor(
-    case_when(
-      primary_bf > 0 & primary_bf <= 5  ~ "< 5",
-      primary_bf > 5 & primary_bf <= 30 ~ "5 - 30",
-      primary_bf > 30 ~ "> 30",
-      TRUE ~ "Ref: Top Performer"
-    ), 
-    levels = c("Ref: Top Performer", "< 5", "5 - 30", "> 30")),
-    model_name = factor(model_name, levels = unique(sub_df$model_name))) %>% 
-  ggplot(aes(model_name, 1/ranks, color = groups)) + 
-  labs(x = NULL, y = "1 / (Bootstrapped Ranks of NRMSE)", color = "Bayes Factor") +
-  geom_boxplot(lwd = 1.2, fatten = 1) + 
-  scale_x_discrete(limits=rev) +
-  coord_flip() +
-  theme_classic(base_size = 16) + 
-  scale_color_manual(values = c(
-    "Ref: Top Performer" = "#A81A50", 
-    '< 5' = '#F94551', 
-    "5 - 30" = "#FCB335",
-    "> 30" = "#32A0B5"
-  ), drop = FALSE) +
-  theme(text = element_text(size = 16),
-        axis.title = element_text(size = 18))
-
-# 2rd metric
+  bootstrap_boxplot(model_name, ranks, primary_bf, 
+                    bf_cutoffs=c(5, 30), ref_label = "Ref: Top Performer") +
+  labs(x = NULL, y = "1 / (Bootstrapped Ranks of NRMSE)", color = "Bayes Factor")
+  
 p_top2 <- bf_df %>%
   filter(ref_model == "top_performer", metrics == "secondary_rank") %>%
-  mutate(groups = factor(
-    case_when(
-      secondary_bf > 0 & secondary_bf <= 5  ~ "< 5",
-      secondary_bf > 5 & secondary_bf <= 30 ~ "5 - 30",
-      secondary_bf > 30 ~ "> 30",
-      TRUE ~ "Ref: Top Performer"
-    ), 
-    levels = c("Ref: Top Performer", "< 5", "5 - 30", "> 30")),
-    model_name = factor(model_name, levels = unique(sub_df$model_name))) %>% 
-  ggplot(aes(model_name, 1/ranks, color = groups)) + 
-  labs(x = NULL, y = "1 / (Bootstrapped Ranks of Spearman Correlation)", color = "Bayes Factor") +
-  geom_boxplot(lwd = 1.2, fatten = 1) + 
-  scale_x_discrete(limits=rev) +
-  coord_flip() +
-  theme_classic(base_size = 16) + 
-  scale_color_manual(values = c(
-    "Ref: Top Performer" = "#A81A50", 
-    '< 5' = '#F94551', 
-    "5 - 30" = "#FCB335",
-    "> 30" = "#32A0B5"
-  ), drop = FALSE) +
-  theme(text = element_text(size = 16),
-        axis.title = element_text(size = 18))
-
+  bootstrap_boxplot(model_name, ranks, primary_bf, 
+                    bf_cutoffs=c(5, 30), ref_label = "Ref: Top Performer") +
+  labs(x = NULL, y = "1 / (Bootstrapped Ranks of Spearman Correlation)", color = "Bayes Factor")
+  
 p_top <- p_top1 / p_top2 + 
   plot_layout(guides = "collect") & 
   theme(legend.position = "top", legend.direction = "horizontal")
 
-### Baseline Magic
+# against baseline MAGIC
 p_magic1 <- bf_df %>%
   filter(ref_model == "baseline_magic", metrics == "primary_rank") %>%
-  mutate(groups = factor(
-    case_when(
-      primary_bf > 0 & primary_bf <= 5  ~ "< 5",
-      primary_bf > 5 & primary_bf <= 30 ~ "5 - 30",
-      primary_bf > 30 ~ "> 30",
-      TRUE ~ "Reference"
-    ), 
-    levels = c("Reference", "< 5", "5 - 30", "> 30")),
-    model_name = factor(model_name, levels = unique(sub_df$model_name))) %>% 
-  ggplot(aes(model_name, 1/ranks, color = groups)) + 
-  labs(x = NULL, y = "1 / (Bootstrapped Ranks of NRMSE)", color = "Bayes Factor") +
-  geom_boxplot(lwd = 1.2, fatten = 1) + 
-  scale_x_discrete(limits=rev) +
-  coord_flip() +
-  theme_classic(base_size = 16) + 
-  scale_color_manual(values = c(
-    "Reference" = "#A81A50", 
-    '< 5' = '#F94551', 
-    "5 - 30" = "#FCB335",
-    "> 30" = "#32A0B5"
-  ), drop = FALSE) +
-  theme(text = element_text(size = 16),
-        axis.title = element_text(size = 18))
-
-# 2rd metric
+  bootstrap_boxplot(model_name, ranks, primary_bf, bf_cutoffs=c(5, 30)) +
+  labs(x = NULL, y = "1 / (Bootstrapped Ranks of NRMSE)", color = "Bayes Factor")
+  
 p_magic2 <- bf_df %>%
   filter(ref_model == "baseline_magic", metrics == "secondary_rank") %>%
-  mutate(groups = factor(
-    case_when(
-      secondary_bf > 0 & secondary_bf <= 5  ~ "< 5",
-      secondary_bf > 5 & secondary_bf <= 30 ~ "5 - 30",
-      secondary_bf > 30 ~ "> 30",
-      TRUE ~ "Reference"
-    ), 
-    levels = c("Reference", "< 5", "5 - 30", "> 30")),
-    model_name = factor(model_name, levels = unique(sub_df$model_name))) %>% 
-  ggplot(aes(model_name, 1/ranks, color = groups)) + 
-  labs(x = NULL, y = "1 / (Bootstrapped Ranks of Spearman Correlation)", color = "Bayes Factor") +
-  geom_boxplot(lwd = 1.2, fatten = 1) + 
-  scale_x_discrete(limits=rev) +
-  coord_flip() +
-  theme_classic(base_size = 16) + 
-  scale_color_manual(values = c(
-    "Reference" = "#A81A50", 
-    '< 5' = '#F94551', 
-    "5 - 30" = "#FCB335",
-    "> 30" = "#32A0B5"
-  ), drop = FALSE) +
-  theme(text = element_text(size = 16),
-        axis.title = element_text(size = 18))
+  bootstrap_boxplot(model_name, ranks, primary_bf, bf_cutoffs=c(5, 30)) +
+  labs(x = NULL, y = "1 / (Bootstrapped Ranks of Spearman Correlation)", color = "Bayes Factor")
 
 p_magic <- p_magic1 / p_magic2 + 
   plot_layout(guides = "collect") & 
   theme(legend.position = "top", legend.direction = "horizontal")
 
-
-##dp
+# against baseline DeepImpute
 p_dp1 <- bf_df %>%
   filter(ref_model == "baseline_deepimpute", metrics == "primary_rank") %>%
-  mutate(groups = factor(
-    case_when(
-      primary_bf > 0 & primary_bf <= 5  ~ "< 5",
-      primary_bf > 5 & primary_bf <= 30 ~ "5 - 30",
-      primary_bf > 30 ~ "> 30",
-      TRUE ~ "Reference"
-    ), 
-    levels = c("Reference", "< 5", "5 - 30", "> 30")),
-    model_name = factor(model_name, levels = unique(sub_df$model_name))) %>% 
-  ggplot(aes(model_name, 1/ranks, color = groups)) + 
-  labs(x = NULL, y = "1 / (Bootstrapped Ranks of NRMSE)", color = "Bayes Factor") +
-  geom_boxplot(lwd = 1.2, fatten = 1) + 
-  scale_x_discrete(limits=rev) +
-  coord_flip() +
-  theme_classic(base_size = 16) + 
-  scale_color_manual(values = c(
-    "Reference" = "#A81A50", 
-    '< 5' = '#F94551', 
-    "5 - 30" = "#FCB335",
-    "> 30" = "#32A0B5"
-  ), drop = FALSE) +
-  theme(text = element_text(size = 16),
-        axis.title = element_text(size = 18))
-
-# 2rd metric
+  bootstrap_boxplot(model_name, ranks, primary_bf, bf_cutoffs=c(5, 30)) +
+  labs(x = NULL, y = "1 / (Bootstrapped Ranks of NRMSE)", color = "Bayes Factor")
+  
 p_dp2 <- bf_df %>%
   filter(ref_model == "baseline_deepimpute", metrics == "secondary_rank") %>%
-  mutate(groups = factor(
-    case_when(
-      secondary_bf > 0 & secondary_bf <= 5  ~ "< 5",
-      secondary_bf > 5 & secondary_bf <= 30 ~ "5 - 30",
-      secondary_bf > 30 ~ "> 30",
-      TRUE ~ "Reference"
-    ), 
-    levels = c("Reference", "< 5", "5 - 30", "> 30")),
-    model_name = factor(model_name, levels = unique(sub_df$model_name))) %>% 
-  ggplot(aes(model_name, 1/ranks, color = groups)) + 
-  labs(x = NULL, y = "1 / (Bootstrapped Ranks of Spearman Correlation)", color = "Bayes Factor") +
-  geom_boxplot(lwd = 1.2, fatten = 1) + 
-  scale_x_discrete(limits=rev) +
-  coord_flip() +
-  theme_classic(base_size = 16) + 
-  scale_color_manual(values = c(
-    "Reference" = "#A81A50", 
-    '< 5' = '#F94551', 
-    "5 - 30" = "#FCB335",
-    "> 30" = "#32A0B5"
-  ), drop = FALSE) +
-  theme(text = element_text(size = 16),
-        axis.title = element_text(size = 18))
-
-
+  bootstrap_boxplot(model_name, ranks, primary_bf, bf_cutoffs=c(5, 30)) +
+labs(x = NULL, y = "1 / (Bootstrapped Ranks of Spearman Correlation)", color = "Bayes Factor")
+  
 p_dp <- p_dp1 / p_dp2 + 
   plot_layout(guides = "collect") & 
   theme(legend.position = "top", legend.direction = "horizontal")
-
+  
 pdf(file="sc1_bootstrap_bayes_factor.pdf", width = 18, height = 12)
 p_top; p_magic; p_dp
 dev.off()

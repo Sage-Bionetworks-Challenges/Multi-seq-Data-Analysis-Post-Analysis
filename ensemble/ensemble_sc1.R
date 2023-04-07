@@ -8,10 +8,11 @@ suppressPackageStartupMessages({
   library(ggsci)
 })
 
-source("utils.R")
-source("bootstrap_funcs.R")
-source("plot_funcs.R")
-source("metrics.R")
+# added in .Rprofile
+# source("utils.R")
+# source("bootstrap_funcs.R")
+# source("plot_funcs.R")
+# source("metrics.R")
 
 ncores <- parallel::detectCores() - 1
 

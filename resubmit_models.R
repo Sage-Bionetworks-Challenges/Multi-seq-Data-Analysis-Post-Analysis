@@ -7,6 +7,7 @@ message("\n")
 message("------------------------------------------")
 message("The script is only working for scRNA-seq and scATAC-seq Data Analysis DREAM Challenge")
 message("------------------------------------------")
+
 source("utils.R")
 
 # set up synapse

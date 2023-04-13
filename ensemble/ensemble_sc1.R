@@ -8,12 +8,6 @@ suppressPackageStartupMessages({
   library(ggsci)
 })
 
-# added in .Rprofile
-# source("utils.R")
-# source("bootstrap_funcs.R")
-# source("plot_funcs.R")
-# source("metrics.R")
-
 ncores <- parallel::detectCores() - 1
 
 
@@ -25,7 +19,6 @@ syn$login(silent = TRUE)
 
 
 # Download submissions ----------------------------------------------------
-task_n <- "task1"
 view_id <- "syn51157023"
 eval_id <- "9615023"
 gs_id <- "syn34612394"

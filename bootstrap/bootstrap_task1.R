@@ -4,11 +4,6 @@ library(tidyr) # 1.3.0
 library(stringr)
 library(patchwork)
 
-# added in .Rprofile
-# source("utils.R")
-# source("bootstrap_funcs.R")
-# source("plot_funcs.R")
-
 ncores <- parallel::detectCores() - 1
 
 

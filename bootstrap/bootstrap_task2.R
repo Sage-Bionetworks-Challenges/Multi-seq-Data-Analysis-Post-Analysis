@@ -6,11 +6,6 @@ suppressPackageStartupMessages({
   library(patchwork)
 })
 
-# added in .Rprofile
-# source("utils.R")
-# source("bootstrap_funcs.R")
-# source("plot_funcs.R")
-
 ncores <- parallel::detectCores() - 1
 
 

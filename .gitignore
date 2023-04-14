@@ -40,7 +40,9 @@ vignettes/*.pdf
 
 # Others
 *.pdf
+*.png
 *.csv
 *.fst
 *.rds
+data
 temp

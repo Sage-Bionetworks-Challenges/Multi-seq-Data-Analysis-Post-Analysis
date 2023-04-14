@@ -1,26 +1,16 @@
-library(ggplot2)
-library(dplyr) # 1.1.0
-library(tidyr) # 1.3.0
-library(stringr)
-library(patchwork)
+source("utils/setup.R")
 
-ncores <- parallel::detectCores() - 1
+task_n <- 1
 
 
-# Set up synapse ----------------------------------------------------------
-reticulate::use_condaenv('synapse')
-synapseclient <- reticulate::import('synapseclient')
-syn <- synapseclient$Synapse()
-syn$login(silent = TRUE)
+# Reading submission data -------------------------------------------------
+sub_data <- file.path(data_dir, str_glue("final_submissions_task{task_n}.rds"))
+score_data <- file.path(data_dir, str_glue("final_scores_task{task_n}.rds"))
+if (!all(file.exists(sub_data, score_data))) source("submission/get_submissions.R")
 
 
-# Download submissions ----------------------------------------------------
-view_id <- "syn51157023"
-eval_id <- "9615023"
-metrics_lookup <- c("nrmse_score", "spearman_score")
-
-# query submissions
-sub_df <- get_ranked_submissions(syn, view_id, eval_id, "private")
+sub_df <- readRDS(sub_data)
+scores_df <- readRDS(score_data)
 
 # label model names
 baseline_magic <- "9732066"
@@ -30,27 +20,24 @@ sub_df <- sub_df %>% mutate(model_name = case_when(id == baseline_magic ~ "Basel
                                                    id == baseline_deepimpute ~ "Baseline DeepImpute",
                                                    TRUE ~ as.character(team)))
 
-
-# Retrieve scores ---------------------------------------------------------
-scores_df <- get_scores(syn, sub_df)
-
 # correct the direction of nrmse
 scores_df$nrmse_score <- -scores_df$nrmse_score
 
 
 # Bootstrapping -----------------------------------------------------------
 # bootstrapping the test case's scores
-boot_df <- bootstrap(.data = scores_df,
-                      seq_size = length(unique(scores_df$dataset)),
-                      .by = "id",
-                      n_iterations = 1000,
-                      seed = 98109,
-                      ncores = ncores)
+metrics <- metrics_lookup[[task_n]]
+boot_df <- simple_bootstrap(.data = scores_df,
+                            seq_size = length(unique(scores_df$dataset)),
+                            .by = "id",
+                            n_iter = 1000,
+                            seed = 98109,
+                            ncores = ncores)
 
-# re-rank bootstrapped submissions
+# rank submissions for all bootstraps
 rank_df <- boot_df %>%
-  nest(scores = c(metrics_lookup[1], metrics_lookup[2], dataset, id, team), .by = bs_n) %>%
-  mutate(ranks = parallel::mclapply(scores, rank_submissions, metrics_lookup[1], metrics_lookup[2], mc.cores = ncores)) %>%
+  nest(scores = c(metrics[1], metrics[2], dataset, id, team), .by = bs_n) %>% 
+  mutate(ranks = parallel::mclapply(scores, rank_submissions, metrics[1], metrics[2], mc.cores = ncores)) %>%
   unnest(cols = ranks) %>%
   select(-scores) %>%
   mutate(model_name = sub_df$model_name[match(id, sub_df$id)])

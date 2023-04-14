@@ -1,39 +1,3 @@
-# return a list of bootstrapped indices
-bootstrap_indices <- function(seq_size,
-                              n_iterations = 1000,
-                              seed = 98109) {
-  set.seed(seed)
-  bs_indices <- lapply(sequence(n_iterations), function(n) {
-    sample(sequence(seq_size), seq_size, replace = TRUE)
-  })
-  bs_indices
-}
-
-
-# bootstrap the data matrix in long format, 
-# bootstrap <- function(.data,
-#                       seq_size,
-#                       .by = NULL,
-#                       n_iterations = 1000,
-#                       seed = 98109,
-#                       ncores = 1) {
-#   set.seed(seed)
-  
-#   rs_indices <- bootstrap_indices(seq_size, n_iterations, seed)
-  
-#   bs_results <- parallel::mclapply(seq_along(rs_indices), function(n) {
-    
-#     rs_data <- .data %>%
-#       slice(rs_indices[[n]], .by = !!sym(.by)) %>%
-#       mutate(bs_n = n)
-    
-#     return(rs_data)
-#   }, mc.cores = ncores) %>% bind_rows()
-  
-#   return(bs_results)
-# }
-
-
 bayes_factor <- function(model, ref) {
   
   # if same values, return 0
@@ -54,11 +18,36 @@ bayes_factor <- function(model, ref) {
 }
 
 
+simple_bootstrap <- function(.data,
+                             seq_size,
+                             .by = NULL,
+                             n_iter = 1000,
+                             seed = 98109,
+                             ncores = 1) {
+  
+  # generate the re-sampling indices
+  set.seed(seed)
+  bootstrap_indices <- matrix(sequence(seq_size), seq_size, n_iter) %>%
+    apply(2, sample, replace = TRUE)
+  
+  bs_results <- parallel::mclapply(1:ncol(bootstrap_indices), function(n) {
+    iter_indice <- bootstrap_indices[, i]
+    rs_data <- .data %>%
+      slice(iter_indice, .by = !!sym(.by)) %>%
+      mutate(bs_n = n)
+    
+    return(rs_data)
+  }, mc.cores = ncores) %>% bind_rows()
+  
+  return(bs_results)
+}
+
+
 bootstrap <- function(.data,
                       func = NULL,
                       ...,
                       direction = 1,
-                      n_iter = 10,
+                      n_iter = 1000,
                       seed = 98109,
                       ncpu = 1) {
 
@@ -90,8 +79,8 @@ bootstrap <- function(.data,
       res <- bs_data
     }
 
-    if (!is.atomic(res)) stop("Error: The output of ", 
-                              deparse(substitute(data)),
+    if (!is.atomic(res)) stop("Error: The output of ",
+                              deparse(substitute(func)),
                               " must be one-dimensional vector.")
     return(res)
   }, mc.cores = ncpu, ignore.interactive = TRUE) %>%

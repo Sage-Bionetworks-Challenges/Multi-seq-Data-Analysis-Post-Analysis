@@ -49,7 +49,7 @@ invisible(
     
     scores_df <- get_scores(syn, sub_df)
     
-    saveRDS(sub_df, 
+    saveRDS(scores_df, 
             file.path(data_dir, str_glue("final_scores_task{task_n}.rds"))
     )
   })

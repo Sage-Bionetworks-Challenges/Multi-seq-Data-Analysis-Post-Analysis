@@ -4,7 +4,7 @@
 
 if (!require("pacman", quietly = TRUE)) install.packages("pacman")
 
-pkgs <- c("dplyr", "stringr", 
+pkgs <- c("dplyr", "stringr", "tidyr",
           "data.table", 
           "ggplot2", "patchwork", 
           "Seurat", "bedr")

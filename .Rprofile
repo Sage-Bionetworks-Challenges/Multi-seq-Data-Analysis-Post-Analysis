@@ -1,4 +1,4 @@
-source("renv/activate.R")
+source("install.R")
 source("utils.R")
 source("plot_funcs.R")
 source("bootstrap_funcs.R")

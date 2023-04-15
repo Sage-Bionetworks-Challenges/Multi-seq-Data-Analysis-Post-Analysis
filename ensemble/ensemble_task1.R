@@ -1,31 +1,16 @@
-suppressPackageStartupMessages({
-  library(ggplot2)
-  library(dplyr)
-  library(tidyr)
-  library(stringr)
-  library(data.table)
-  library(patchwork)
-  library(ggsci)
-})
+source("utils/setup.R")
+source("utils/bootstrap_funcs.R")
+source("utils/metrics.R")
 
-ncores <- parallel::detectCores() - 1
+task_n <- 1
+metrics <- metrics_lookup[[task_n]]
 
 
-# Set up synapse ----------------------------------------------------------
-reticulate::use_condaenv('synapse')
-synapseclient <- reticulate::import('synapseclient')
-syn <- synapseclient$Synapse()
-syn$login(silent = TRUE)
+# Reading submission data -------------------------------------------------
+sub_data <- file.path(data_dir, str_glue("final_submissions_task{task_n}.rds"))
+if (!file.exists(sub_data)) source("submission/get_submissions.R")
 
-
-# Download submissions ----------------------------------------------------
-view_id <- "syn51157023"
-eval_id <- "9615023"
-gs_id <- "syn34612394"
-metrics_lookup <- c("nrmse_score", "spearman_score")
-
-# query submissions
-all_sub_df <- get_ranked_submissions(syn, view_id, eval_id, "private")
+all_sub_df <- readRDS(sub_data)
 
 # label model names
 baseline_magic <- "9732066"
@@ -48,8 +33,9 @@ all_gs <- readRDS(gs_path)
 # prepare
 all_scores <- data.table()
 n <- 0
-temp_dir <- "temp"
-dir.create(temp_dir, showWarnings = FALSE)
+file_ext <- "_imputed.csv"
+output_dir <- file.path(data_dir, "model_output")
+dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
 
 message("!!!!!!!!!!!!! Ensemble steps below requires high I/O")
 message("!!!!!!!!!!!!! and high computing due to the large number of scrna data")
@@ -67,15 +53,14 @@ while(n < nrow(sub_df)) {
   
   message("Retrieving prediction files ...")
   # create a temp dir to store all prediction files for one submission
-  pred_dir <- file.path(temp_dir, str_glue("{team}_{sub_id}"))
+
+  pred_dir <- file.path(output_dir, str_glue("{team}_{sub_id}_task{task_n}"))  
+  
   if (!dir.exists(pred_dir)) {
-    pred_path <- syn$get(pred_id)$path
-    dir.create(pred_dir, showWarnings = FALSE, recursive = TRUE)
-    # decompress the prediction files
-    untar(pred_path, exdir = pred_dir)
+    source(str_glue("submission/get_predictions_task{task_n}.R"))
   }
   # get all prediction file names
-  pred_files <- list.files(file.path(pred_dir, "output"), pattern = "_imputed.csv")
+  pred_files <- list.files(file.path(pred_dir, "output"), pattern = file_ext)
   
   message("Calculating scores on all prediction files ...")
   if (n > 0) message("Ensembling by mean ...")
@@ -125,8 +110,8 @@ while(n < nrow(sub_df)) {
     )
     
     # scoring
-    nrmse_score <- calculate_nrmse(eval_data, pseudobulk = use_pseudobulk)
-    spearman_score <- calculate_spearman(eval_data, pseudobulk = use_pseudobulk)
+    nrmse_score <- calculate_nrmse(eval_data, pseudobulk = use_pseudobulk, aggregate_func = mean)
+    spearman_score <- calculate_spearman(eval_data, pseudobulk = use_pseudobulk, aggregate_func = mean, na.rm = TRUE)
     
     # collect scores for each test case
     return(
@@ -164,12 +149,14 @@ baseline_scores <- all_sub_df %>%
 
 all_scores <- bind_rows(all_scores, baseline_scores)
 
+# correct the direction of nrmse
+all_scores$nrmse_score <- -all_scores$nrmse_score
 
 # Rank new submissions --------------------------------------------------------
 # rank submissions all ensemble models and baselines
 # will be used to plot later
 rank_df <- all_scores %>%
-  rank_submissions(metrics_lookup[1], metrics_lookup[2], "ensemble_label") %>%
+  rank_submissions(metrics[1], metrics[2], "ensemble_label") %>%
   mutate(team = gsub("\\d? \\+ (.*)$", "\\1", ensemble_label),
          ensemble_label = factor(ensemble_label, levels = c("0 + GOAL_LAB", 
                                                             "1 + DLS5", 
@@ -196,17 +183,17 @@ rank_line_p <- rank_df %>%
 
 # Bootstrapping -----------------------------------------------------------
 # bootstrapping the rankings
-boot_df <- bootstrap(.data = all_scores,
-                     seq_size = length(unique(all_scores$dataset)),
-                     .by = "ensemble_label",
-                     n_iterations = 1000,
-                     seed = 165136,
-                     ncores = ncores)
+boot_df <- simple_bootstrap(.data = all_scores,
+                            seq_size = length(unique(all_scores$dataset)),
+                            .by = "ensemble_label",
+                            n_iter = 1000,
+                            seed = 165136,
+                            ncores = ncores)
 
 # rank submissions for all bootstraps
 boot_rank_df <- boot_df %>%
-  nest(scores = c(metrics_lookup[1], metrics_lookup[2], dataset, ensemble_label), .by = bs_n) %>%
-  mutate(ranks = parallel::mclapply(scores, rank_submissions, metrics_lookup[1], metrics_lookup[2], "ensemble_label", mc.cores = ncores)) %>%
+  nest(scores = c(metrics[1], metrics[2], dataset, ensemble_label), .by = bs_n) %>%
+  mutate(ranks = parallel::mclapply(scores, rank_submissions, metrics[1], metrics[2], "ensemble_label", mc.cores = ncores)) %>%
   unnest(cols = ranks) %>%
   select(-scores)
 

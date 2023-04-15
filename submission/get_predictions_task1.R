@@ -23,7 +23,7 @@ for (n in 1:nrow(sub_df)) {
   
   
   output_dir <- file.path(data_dir, "model_output")
-  dir.create(temp_dir, showWarnings = FALSE, recursive = TRUE)
+  dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
   pred_dir <- file.path(output_dir, str_glue("{team}_{sub_id}_task{task_n}"))
   
   message("\n")

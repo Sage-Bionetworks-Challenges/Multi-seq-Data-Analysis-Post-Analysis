@@ -37,6 +37,7 @@
   ))
 }
 
+
 calculate_nrmse <- function(.data, pseudobulk = FALSE, penality = TRUE, aggregate_func = NULL, ...) {
   true <- .data$true
   pred <- .data$pred
@@ -69,6 +70,7 @@ calculate_nrmse <- function(.data, pseudobulk = FALSE, penality = TRUE, aggregat
   return(score)
 }
 
+
 calculate_spearman <- function(.data, pseudobulk = FALSE, penality = TRUE, aggregate_func = NULL, ..., ncores = 1) {
   true <- .data$true
   pred <- .data$pred
@@ -98,6 +100,7 @@ calculate_spearman <- function(.data, pseudobulk = FALSE, penality = TRUE, aggre
   if (n_na_cells > 0 & penality) score <- score * (1 - n_na_cells / total_cells)
   return(as.numeric(score))
 }
+
 
 ## Function to calculate scores on scATACseq data ------------------
 category_recall <- function(a, b, verbose = FALSE) {

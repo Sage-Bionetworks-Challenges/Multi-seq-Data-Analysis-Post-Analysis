@@ -1,13 +1,14 @@
 source("utils/setup.R")
+source("utils/bootstrap_funcs.R")
 
 task_n <- 1
+metrics <- metrics_lookup[[task_n]]
 
 
 # Reading submission data -------------------------------------------------
 sub_data <- file.path(data_dir, str_glue("final_submissions_task{task_n}.rds"))
 score_data <- file.path(data_dir, str_glue("final_scores_task{task_n}.rds"))
 if (!all(file.exists(sub_data, score_data))) source("submission/get_submissions.R")
-
 
 sub_df <- readRDS(sub_data)
 scores_df <- readRDS(score_data)
@@ -26,7 +27,6 @@ scores_df$nrmse_score <- -scores_df$nrmse_score
 
 # Bootstrapping -----------------------------------------------------------
 # bootstrapping the test case's scores
-metrics <- metrics_lookup[[task_n]]
 boot_df <- simple_bootstrap(.data = scores_df,
                             seq_size = length(unique(scores_df$dataset)),
                             .by = "id",

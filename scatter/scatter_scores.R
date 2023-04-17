@@ -1,23 +1,18 @@
-library(ggplot2)
-library(dplyr) 
-library(tidyr)
-library(stringr)
-library(ggsci)
-library(patchwork)
+source("utils/setup.R")
+source("utils/bootstrap_funcs.R")
+source("utils/plot_funcs.R")
 
-## Task 1 - Final Round Only ------------------------------------------------
-
-# set up syanpse ----------------------------------------------------------
-reticulate::use_condaenv('synapse')
-synapseclient <- reticulate::import('synapseclient')
-syn <- synapseclient$Synapse()
-syn$login(silent = TRUE)
+task_n <- 1
+metrics <- metrics_lookup[[task_n]]
 
 
-# download the submissions ------------------------------------------------
-view_id <- "syn51157023"
-eval_id <- "9615023"
-sub_df <- get_ranked_submissions(syn, view_id, eval_id, "private")
+# Reading submission data -------------------------------------------------
+sub_data <- file.path(data_dir, str_glue("final_submissions_task{task_n}.rds"))
+score_data <- file.path(data_dir, str_glue("final_scores_task{task_n}.rds"))
+if (!all(file.exists(sub_data, score_data))) source("submission/get_submissions.R")
+
+sub_df <- readRDS(sub_data)
+scores_df <- readRDS(score_data)
 
 
 # label model names -------------------------------------------------------
@@ -29,8 +24,7 @@ sub_df <- sub_df %>% mutate(model_name = case_when(id == baseline_magic ~ "Basel
                                                    TRUE ~ as.character(team)))
 
 
-# get all scores ----------------------------------------------------------
-scores_df <- get_scores(syn, sub_df)
+# prepare df for plotting ----------------------------------------------------------
 scores_df$model_name <- sub_df$model_name[match(scores_df$id, sub_df$id)]
 
 sc1_plot_df <- scores_df %>%
@@ -77,7 +71,7 @@ sc1_p <- sc1_p1 + sc1_p2 +
 # visualize scores on each gene ------------------------------------------------
 # read scores - generated via get_gene_scores.R
 if (F) {
-  gene_scores <- readRDS("all_genes_scores_sc1.rds")
+  gene_scores <- readRDS(file.path(data_dir, "all_genes_scores_task1.rds"))
   
   # plotting
   # downsampled by reads
@@ -113,19 +107,30 @@ if (F) {
   dev.off()
 }
 
+
 ## Task 2 - Final Round Only ------------------------------------------------
 # repeat
-view_id <- "syn51157023"
-eval_id <- "9615024"
-sub_df <- get_ranked_submissions(syn, view_id, eval_id, "private")
+task_n <- 2
+metrics <- metrics_lookup[[task_n]]
 
+
+# Reading submission data -------------------------------------------------
+sub_data <- file.path(data_dir, str_glue("final_submissions_task{task_n}.rds"))
+score_data <- file.path(data_dir, str_glue("final_scores_task{task_n}.rds"))
+if (!all(file.exists(sub_data, score_data))) source("submission/get_submissions.R")
+
+sub_df <- readRDS(sub_data)
+scores_df <- readRDS(score_data)
+
+# label model name
 baseline_macs2 <- "9732044"
 top_performer <- sub_df$id[1]
 sub_df <- sub_df %>% mutate(model_name = case_when(id == baseline_macs2 ~ "Baseline MACS2",
                                                    TRUE ~ as.character(team)))
-scores_df <- get_scores(syn, sub_df)
 scores_df$model_name <- sub_df$model_name[match(scores_df$id, sub_df$id)]
 
+
+# Plotting ----------------------------------------------------------
 sc2_p1 <- ggplot(scores_df %>%
        filter(grepl("ds1", dataset)) %>%
        separate(dataset, into =c("prefix", "dummy", "cluster", "replicate", "prop"), sep = "\\.", remove = FALSE) %>%
@@ -168,109 +173,10 @@ sc1_p; sc2_p
 dev.off()
 
 
-# upload to synapse------------------------------------------------------------------
+# Upload to synapse------------------------------------------------------------------
 
 file <- synapseclient$File("metrics_scatter.pdf", parent="syn51270280")
 stored <-syn$store(file, used = "syn51320982")
 
-# large, use screenshot instead
-# file <- synapseclient$File("metrics_scatter_all_gens_sc1.pdf", parent="syn51270280")
-# stored <-syn$store(file, used = "syn51320982")
-
-
-# ## Task 1 - Both Rounds ------------------------------------------------
-# 
-# # download the submissions from post-submission table
-# view_id <- "syn51157023"
-# eval_id <- "9615324"
-# query <- stringr::str_glue(
-#   "
-#   SELECT
-#     re_submitterid, 
-#   	re_id, 
-#   	prediction_fileid,
-#     submission_scores,
-#   	re_submission_phase,
-#   	re_overall_rank
-#     FROM syn51157023
-#     WHERE submission_status = 'SCORED'
-#       AND status = 'ACCEPTED'
-#       AND evaluationid = '9615324' OR evaluationid = '9615023'
-#       AND re_id is NOT NULL
-#     ORDER BY re_overall_rank
-#     "
-# )
-# 
-# # download the submissions ordered by overall rank
-# sub_df <- syn$tableQuery(query)$asDataFrame() %>%
-#   mutate(across(everything(), as.character),
-#          team = as.character(sapply(re_submitterid, get_name, syn = syn))) %>%
-#   setnames(c("submitterid", "id", "prediction_fileid", "submission_scores", "submission_phase", "ranks", "team")) %>%
-#   mutate(id = ifelse(submission_phase == "public", submitterid, id)) %>%
-#   tibble::remove_rownames()
-# 
-# # label model name - repeat steps from task1 - final round only
-# baseline_magic <- "9732066"
-# baseline_deepimpute <- "9732074"
-# top_performer <- sub_df$id[1]
-# sub_df <- sub_df %>% mutate(model_name = case_when(id == baseline_magic ~ "Baseline MAGIC",
-#                                                    id == baseline_deepimpute ~ "Baseline DeepImpute",
-#                                                    TRUE ~ as.character(team)))
-# 
-# 
-# # get all scores ----------------------------------------------------------
-# scores_df <- get_scores(syn, sub_df) %>%
-#   mutate(model_name = sub_df$model_name[match(id, sub_df$id)],
-#          phase = sub_df$submission_phase[match(id, sub_df$id)]) %>%
-#   mutate(tag = paste0(model_name, "_", phase))
-# 
-# sc1_plot_df <- scores_df %>%
-#   separate(dataset, into = c("prefix", "prop", "replicate"), sep = "_", remove = FALSE) %>%
-#   mutate(downsampled = if_else(prop %in% c("p00625", "p0125", "p025"), "by_cells", "by_reads"),
-#          tag = factor(tag, levels = unique(scores_df$tag)),
-#          prefix = toupper(prefix),
-#          prop = factor(case_when(prop == "p00625" ~ "6.25%",
-#                                  prop == "p0125" ~ "12.5%",
-#                                  prop == "p025" ~ "25%",
-#                                  TRUE ~ gsub("p(\\d+k)", "\\1", prop)),
-#                        levels = c("6.25%", "12.5%", "25%", "10k", "20k", "50k")))
-# 
-# 
-# # plotting ----------------------------------------------------------
-# # downsampled by reads
-# cols <- c(ggsci::pal_jco()(7), ggsci::pal_flatui()(10)[3:8])
-# sc1_p1 <- ggplot(sc1_plot_df %>% filter(downsampled == "by_reads"),
-#                  aes(x=-nrmse_score, y=spearman_score)) +
-#   geom_jitter(aes(color = tag), size = 2, alpha = 1) +
-#   scale_color_manual(values=cols) +
-#   theme_bw(base_size = 16) +
-#   facet_grid(prop~prefix, scales = "free") +
-#   theme(strip.background = element_blank()) +
-#   labs(x = "NRMSE", y = "Spearman Correlation", color = "Model", title = "Metrics Scatter Plot - Task 1", subtitle = "Dowsampled by reads")
-# 
-# # downsampled by cells
-# sc1_p2 <- ggplot(sc1_plot_df %>% filter(downsampled == "by_cells"),
-#                  aes(x=nrmse_score, y=spearman_score)) +
-#   geom_jitter(aes(color = model_name), size = 2, alpha = 1) +
-#   scale_color_jco() +
-#   theme_bw(base_size = 16) +
-#   facet_grid(prop~prefix) +
-#   theme(strip.background = element_blank()) +
-#   labs(x = "NRMSE", y = NULL, color = "Model", subtitle = "Dowsampled by cells") 
-# 
-# # combine
-# sc1_p_all <- sc1_p1 + sc1_p2 +
-#   plot_layout(guides = "collect", widths = c(5, 2))  &
-#   theme(legend.position = "bottom", legend.direction = "horizontal", legend.box.background = element_rect(colour = "black"))
-# 
-# 
-# pdf(file="metrics_scatter_both_rounds_task1.pdf", width = 12, height = 6)
-# sc1_p_all
-# dev.off()
-# 
-# 
-# # upload to synapse------------------------------------------------------------------
-# 
-# file <- synapseclient$File("metrics_scatter_both_rounds_task1.pdf", parent="syn51270280")
-# # stored <-syn$store(file, used = "")
-
+# 'metrics_scatter_all_gens_sc1.pdf' is large due to millions of data points, 
+# use screenshot instead

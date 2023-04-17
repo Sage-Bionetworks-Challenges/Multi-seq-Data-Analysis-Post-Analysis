@@ -1,3 +1,4 @@
+# Install all R packages if not yet --------------------------
 source("install.R")
 
 # Set up synapse ----------------------------------------------------------
@@ -10,6 +11,7 @@ syn$login(silent = TRUE)
 # Set up task variables --------------------------------------------------------
 view_id <- "syn51157023"
 eval_id <- list("9615023", "9615024")
+gs_id <- list("syn34612394", "syn35294386")
 metrics_lookup <- list(c("nrmse_score", "spearman_score"), 
                        c("summed_score", "jaccard_similarity"))
 

@@ -1,3 +1,4 @@
+# Check if a synapse team --------------------------
 is_team <- function(syn, uid) {
   if (missing(syn)) stop('argument "syn" is missing')
   if (missing(uid)) stop('argument "uid" is missing')
@@ -12,6 +13,7 @@ is_team <- function(syn, uid) {
 }
 
 
+# Check if a synapse user --------------------------
 is_user <- function(syn, uid) {
   if (missing(syn)) stop('argument "syn" is missing')
   if (missing(uid)) stop('argument "uid" is missing')
@@ -26,6 +28,7 @@ is_user <- function(syn, uid) {
 }
 
 
+# Check if a user is part of an existing team --------------------------
 is_member <- function(syn, user_uid, team_uid) {
   if (missing(user_uid)) stop('argument "user_uid" is missing')
   if (missing(team_uid)) stop('argument "team_uid" is missing')
@@ -46,7 +49,8 @@ is_member <- function(syn, user_uid, team_uid) {
   )
 }
 
-# check each user is part of existing teams
+
+# Check if users are part of existing teams --------------------------
 validate_users <- function(syn, users, teams, .drop = FALSE) {
   res <- sapply(users, function(user) {
     if (is_user(syn, user)) { # only validate user
@@ -67,6 +71,7 @@ validate_users <- function(syn, users, teams, .drop = FALSE) {
 }
 
 
+# Retrieve the user/team display name --------------------------
 get_name <- function(syn, id) {
   name <- tryCatch(
     {
@@ -80,6 +85,8 @@ get_name <- function(syn, id) {
 }
 
 
+# Resubmit docker models using synapseclient --------------------------
+# Not working for the projects without access
 # resubmit <- function(syn, sub_id, new_eval_id) {
 #   # resubmit the model without minimal requirements for the request
 #   # no teamId, contributors or eligibilityStateHash
@@ -110,6 +117,7 @@ get_name <- function(syn, id) {
 # }
 
 
+# Copy and collect docker models to other project --------------------------
 copy_model <- function(image, project_id, name, tag = "latest") {
   
   # get new project repo
@@ -140,9 +148,11 @@ get_ranked_submissions <- function(syn, query) {
 }
 
 
+# Retrieving scores from submission view table --------------------------
 get_scores <- function(syn, sub_df) {
   # validate if any valid submission to prevent from failing
   stopifnot(nrow(sub_df) > 0)
+  stopifnot("submission_scores" %in% colnames(sub_df))
   
   # read all valid scores results
   all_scores <- lapply(1:nrow(sub_df), function(sub_n) {
@@ -161,6 +171,7 @@ get_scores <- function(syn, sub_df) {
 }
 
 
+# Rank metrics across all submissions --------------------------
 rank_submissions <- function(scores, primary_metric, secondary_metric, group=c("id", "team")) {
   stopifnot(nrow(scores) > 0)
   stopifnot(c(primary_metric, secondary_metric, "dataset") %in% colnames(scores))

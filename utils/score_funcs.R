@@ -1,4 +1,4 @@
-## Function to calculate scores on scRNAseq data ------------------
+# Prepare the input data to score for Task 1 ------------------------------
 .prepare <- function(true, pred, pseudobulk = FALSE, proportion = NULL) {
   shared_cells <- intersect(colnames(pred), colnames(true))
   shared_genes <- intersect(rownames(pred), rownames(true))
@@ -38,6 +38,7 @@
 }
 
 
+# Compute NRMSE for Task 1 ------------------------------
 calculate_nrmse <- function(.data, pseudobulk = FALSE, penality = TRUE, aggregate_func = NULL, ...) {
   true <- .data$true
   pred <- .data$pred
@@ -71,6 +72,7 @@ calculate_nrmse <- function(.data, pseudobulk = FALSE, penality = TRUE, aggregat
 }
 
 
+# Compute Spearman Correlation for Task 1 ------------------------------
 calculate_spearman <- function(.data, pseudobulk = FALSE, penality = TRUE, aggregate_func = NULL, ..., ncores = 1) {
   true <- .data$true
   pred <- .data$pred
@@ -102,7 +104,7 @@ calculate_spearman <- function(.data, pseudobulk = FALSE, penality = TRUE, aggre
 }
 
 
-## Function to calculate scores on scATACseq data ------------------
+# Compute scores for Task 2 ------------------------------
 category_recall <- function(a, b, verbose = FALSE) {
   a.int2 <- tryCatch(
     {
@@ -115,88 +117,4 @@ category_recall <- function(a, b, verbose = FALSE) {
   # fraction of rows in ground truth that overlap at all with peaks in submission
   return(nrow(a.int2) / nrow(a))
 }
-
-
-## Wrap up funcion to scoring bootstrapped scRNAseq data imputation  ------------------
-score_bs_imputation <- function(bs_imputed, # bootstrapped imputed
-                                gs, # groundtruth
-                                proportion,
-                                n_na_cells,
-                                n_na_genes, 
-                                total_cells,
-                                total_genes,
-                                pseudobulk = FALSE) {
-  
-  # match the order of genes and cells of grouth truth with bootraped data
-  stopifnot(any(rownames(bs_imputed) %in% rownames(gs), colnames(bs_imputed) %in% colnames(gs)))
-  bs_gs <- gs[rownames(bs_imputed), colnames(bs_imputed)]
-
-  # not re-normalize the boostrapped data since it will change the origin variability
-  
-  # prepare the data for scoring
-  # set the numbers from origin data (not bootstrapped data) for penality
-  # aka, perserve the penality of origin imputed data if any missing genes/cells
-  bs_eval_data <- list(
-    true = bs_gs,
-    pred = bs_imputed,
-    n_na_cells = n_na_cells,
-    n_na_genes = n_na_genes,
-    total_cells = total_cells,
-    total_genes = total_genes
-  )
-  # scoring
-  nrmse_score <- calculate_nrmse(bs_eval_data, pseudobulk = pseudobulk, aggregate_func = mean, na.rm = TRUE)
-  spearman_score <- calculate_spearman(bs_eval_data, pseudobulk = pseudobulk, aggregate_func = mean, na.rm = TRUE)
-
-  return(as.numeric(c(nrmse_score, spearman_score)))
-}
-
-
-## Function to wrap scoring functions for scATACseq data ------------------
-score_bs_peaks <- function(bs_peak, # bootstrapped call peaks
-                           gs, # grountruth data for evaluation 
-                           use_cellspecific = FALSE) {
-  
-  # retrieve peaks from groundtruth data will be used to score
-  gs_ranked_filtered <- gs[["gs_ranked_filtered"]]
-  gs_sort <- gs[["gs_sort"]]
-  gs_sort_ubi <- gs[["gs_sort_ubi"]]
-  gs_sort_tss <- gs[["gs_sort_tss"]]
-  gs_sort_csp <- gs[["gs_sort_csp"]]
-
-  # sort bootstrapped peaks
-  peak_sort <- bedr.merge.region(
-    bedr.sort.region(
-      as.data.frame(bs_peak),
-      check.zero.based = FALSE, 
-      check.chr = FALSE, 
-      check.valid = FALSE,
-      verbose = FALSE
-    ), 
-    verbose = FALSE
-  )
-
-  # caculate scores
-  j_result <- jaccard(gs_sort, peak_sort, check.merge = TRUE, check.chr = FALSE, check.sort = FALSE, check.valid = FALSE, verbose = FALSE)
-  jaccard_similarity <- as.numeric(j_result$jaccard)
-  recall_ubiquitous <- category_recall(gs_sort_ubi, pred_sort)
-  recall_tss <- category_recall(gs_sort_tss, pred_sort)
-  recall_cellspecific <- category_recall(gs_sort_csp, pred_sort)
-  
-  summed_score <- jaccard_similarity + recall_ubiquitous + recall_tss
-  
-  # report cellspecific for ds2, but not added to summed score
-  if (use_cellspecific) summed_score <- summed_score + recall_cellspecific
-
-  return(c(
-    jaccard_similarity, 
-    recall_ubiquitous, 
-    recall_tss,
-    recall_cellspecific,
-    summed_score
-  ))
-}
-
-      
-
       

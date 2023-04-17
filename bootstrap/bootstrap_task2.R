@@ -1,5 +1,6 @@
 source("utils/setup.R")
 source("utils/bootstrap_funcs.R")
+source("utils/plot_funcs.R")
 
 task_n <- 2
 metrics <- metrics_lookup[[task_n]]

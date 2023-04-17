@@ -1,22 +1,16 @@
-library(dplyr) 
-library(tidyr)
-library(stringr)
-library(data.table)
+source("utils/setup.R")
+source("utils/bootstrap_funcs.R")
+source("utils/plot_funcs.R")
 
-# set up syanpse ----------------------------------------------------------
-reticulate::use_condaenv('synapse')
-synapseclient <- reticulate::import('synapseclient')
-syn <- synapseclient$Synapse()
-syn$login(silent = TRUE)
-ncores <- parallel::detectCores() - 1
+task_n <- 1
+metrics <- metrics_lookup[[task_n]]
 
 
-# download the submissions ------------------------------------------------
-view_id <- "syn51157023"
-eval_id <- "9615023"
-gs_id <- "syn34612394"
+# Reading submission data -------------------------------------------------
+sub_data <- file.path(data_dir, str_glue("final_submissions_task{task_n}.rds"))
+if (!file.exists(sub_data)) source("submission/get_submissions.R")
 
-sub_df <- get_ranked_submissions(syn, view_id, eval_id, "private")
+sub_df <- readRDS(sub_data)
 
 
 # label model names -------------------------------------------------------
@@ -28,10 +22,10 @@ sub_df <- sub_df %>% mutate(model_name = case_when(id == baseline_magic ~ "Basel
                                                    TRUE ~ as.character(team)))
 
 
-# get all scores ----------------------------------------------------------
+# Get scores on all genes ----------------------------------------------------------
 
 # download the ground truth
-gs_path <- syn$get(gs_id)["path"]
+gs_path <- syn$get(gs_id[[task_n]])["path"]
 all_gs <- readRDS(gs_path)
   
 # prepare
@@ -54,14 +48,11 @@ for (n in 1:nrow(sub_df)) {
   message("------------------------------------------")
   
   message("Retrieving prediction files ...")
-  # create a temp dir to store all prediction files for one submission
-  pred_dir <- file.path(temp_dir, str_glue("{team}_{sub_id}"))
+  pred_dir <- file.path(temp_dir, str_glue("{team}_{sub_id}_task{task_n}"))
   if (!dir.exists(pred_dir)) {
-    pred_path <- syn$get(pred_id)$path
-    dir.create(pred_dir, showWarnings = FALSE, recursive = TRUE)
-    # decompress the prediction files
-    untar(pred_path, exdir = pred_dir)
+    source(str_glue("submission/get_predictions_task{task_n}.R"))
   }
+  
   # get all prediction file names
   pred_files <- list.files(file.path(pred_dir, "output"), pattern = "_imputed.csv")
   
@@ -126,5 +117,5 @@ all_scores <- all_scores %>%
                        levels = c("6.25%", "12.5%", "25%", "10k", "20k", "50k"))) %>%
   select(-dummy)
 
-saveRDS(all_scores, "all_genes_scores_sc1.rds")
+saveRDS(all_scores, file.path(data_dir, "all_genes_scores_task1.rds"))
 

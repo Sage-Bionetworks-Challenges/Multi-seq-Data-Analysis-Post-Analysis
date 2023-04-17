@@ -1,4 +1,5 @@
 
+# Boxplot of Bayes Factor on boostrapped results --------------------------
 bootstrap_boxplot <- function(.data,
                               .x,
                               .y,
@@ -58,7 +59,7 @@ bootstrap_boxplot <- function(.data,
 }
 
 
-
+# Line plot of Ensembled models --------------------------
 ensemble_ranks_line <- function(.data, 
                                 .x, 
                                 .y, 

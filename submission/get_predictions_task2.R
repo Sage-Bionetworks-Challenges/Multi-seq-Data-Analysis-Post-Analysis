@@ -12,7 +12,7 @@ sub_df <- readRDS(
   file.path(data_dir, str_glue("final_submissions_task{task_n}.rds"))
 )
 
-message("!!!!!!!!!!!!! Each prediction output will have size of ~2G")
+message("!!!!!!!!!!!!! Output files of each submission will have size of ~30G")
 if (interactive()) utils::askYesNo("Are you sure to continue?")
 
 for (n in 1:nrow(sub_df)) { 
@@ -40,9 +40,3 @@ for (n in 1:nrow(sub_df)) {
   
   message("Done {n}/{nrow(sub_df)}")
 }
-
-
-# upload to synapse------------------------------------------------------------------
-if (F) {
-}
-

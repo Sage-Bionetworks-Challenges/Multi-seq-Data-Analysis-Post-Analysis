@@ -1,23 +1,4 @@
-bayes_factor <- function(model, ref) {
-  
-  # if same values, return 0
-  if (identical(model, ref)) return(0)
-  
-  diff <- model - ref
-  
-  pos_n <- sum(diff >= 0)
-  neg_n <- sum(diff < 0)
-  
-  # prevent from all zeros
-  K <- (pos_n + 0.01) / (neg_n + 0.01)
-  
-  # reciprocate fraction of K
-  if (K < 1) K <- 1 / K
-  
-  return(K)
-}
-
-
+# Bootstrap on rows of matrix and return a long format result --------------------------
 simple_bootstrap <- function(.data,
                              seq_size,
                              .by = NULL,
@@ -43,6 +24,8 @@ simple_bootstrap <- function(.data,
 }
 
 
+# Bootstrap data matrix and return a wide format result --------------------------
+# A custom function can be applied to each bootstrapped result
 bootstrap <- function(.data,
                       func = NULL,
                       ...,
@@ -71,8 +54,8 @@ bootstrap <- function(.data,
       bs_data <- .data[, iter_indice]
     }
     
-    # apply the custom function on boostrapped data,
-    # otherwise, just return boostrapped data
+    # apply the custom function on bootstrapped data,
+    # otherwise, just return bootstrapped data
     if (!is.null(func)) {
       res <- func(bs_data, ...)
     } else {
@@ -87,3 +70,26 @@ bootstrap <- function(.data,
     setDT(unlist(., recursive = FALSE)) %>%
     data.table::setnames(paste0("bs_", sequence(n_iter)))
 }
+
+
+# Compute Bayes Factor between two vectors --------------------------
+bayes_factor <- function(model, ref) {
+  
+  # if same values, return 0
+  if (identical(model, ref)) return(0)
+  
+  diff <- model - ref
+  
+  pos_n <- sum(diff >= 0)
+  neg_n <- sum(diff < 0)
+  
+  # prevent from all zeros
+  K <- (pos_n + 0.01) / (neg_n + 0.01)
+  
+  # reciprocate fraction of K
+  if (K < 1) K <- 1 / K
+  
+  return(K)
+}
+
+

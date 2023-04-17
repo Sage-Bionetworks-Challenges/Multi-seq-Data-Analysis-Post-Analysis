@@ -1,6 +1,7 @@
 source("utils/setup.R")
 source("utils/bootstrap_funcs.R")
-source("utils/metrics.R")
+source("utils/score_funcs.R")
+source("utils/plot_funcs.R")
 
 task_n <- 2
 metrics <- metrics_lookup[[task_n]]
@@ -25,7 +26,7 @@ all_sub_df <- all_sub_df %>% mutate(model_name = case_when(id == baseline_macs2 
 sub_df <- all_sub_df %>% filter(!id %in% c(baseline_macs2))
 
 # download the ground truth
-gs_path <- syn$get(gs_id)["path"]
+gs_path <- syn$get(gs_id[[task_n]])["path"]
 all_gs <- readRDS(gs_path)
 
 # prepare
@@ -50,12 +51,11 @@ while (n < nrow(sub_df)) {
   message("------------------------------------------")
   
   message("Retrieving prediction files ...")
-  # create a temp dir to store all prediction files for one submission
-  pred_dir <- file.path(temp_dir, str_glue("{team}_{sub_id}"))
-  
+  pred_dir <- file.path(temp_dir, str_glue("{team}_{sub_id}_task{task_n}"))
   if (!dir.exists(pred_dir)) {
     source(str_glue("submission/get_predictions_task{task_n}.R"))
   }
+  
   # get all prediction file names
   pred_files <- list.files(file.path(pred_dir, "output"), pattern = file_ext)
   

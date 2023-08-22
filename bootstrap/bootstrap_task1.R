@@ -13,17 +13,22 @@ if (!all(file.exists(sub_data, score_data))) source("submission/get_submissions.
 
 sub_df <- readRDS(sub_data)
 scores_df <- readRDS(score_data)
+# correct the direction of nrmse
+scores_df$nrmse_score <- -scores_df$nrmse_score
 
 # label model names
 baseline_magic <- "9732066"
 baseline_deepimpute <- "9732074"
-top_performer <- sub_df$id[1]
+# re-rank all data
+sub_ranks <- rank_submissions(scores_df, metrics[1], metrics[2])
+
+top_performer <- sub_ranks$id[1]
 sub_df <- sub_df %>% mutate(model_name = case_when(id == baseline_magic ~ "Baseline MAGIC",
                                                    id == baseline_deepimpute ~ "Baseline DeepImpute",
                                                    TRUE ~ as.character(team)))
-
-# correct the direction of nrmse
-scores_df$nrmse_score <- -scores_df$nrmse_score
+sub_ranks <- sub_ranks %>% mutate(model_name = case_when(id == baseline_magic ~ "Baseline MAGIC",
+                                                         id == baseline_deepimpute ~ "Baseline DeepImpute",
+                                                         TRUE ~ as.character(team)))
 
 
 # Bootstrapping -----------------------------------------------------------
@@ -58,7 +63,7 @@ bf_df <- lapply(seq_along(ref_ids), function(i) {
   }) %>% 
   bind_rows() %>%
   gather("metrics", "ranks", c(primary_rank, secondary_rank)) %>%
-  mutate(model_name = factor(model_name, levels = unique(sub_df$model_name)),
+  mutate(model_name = factor(model_name, levels = unique(sub_ranks$model_name)),
          ranks = 1/ranks)
 
 
@@ -110,7 +115,8 @@ p_dp <- p_dp1 / p_dp2 +
   plot_layout(guides = "collect") & 
   theme(legend.position = "top", legend.direction = "horizontal")
   
-pdf(file="sc1_bootstrap_bayes_factor.pdf", width = 18, height = 12)
+# pdf(file="sc1_bootstrap_bayes_factor.pdf", width = 18, height = 12)
+pdf(file="sc1_bootstrap_bayes_factor_post.pdf", width = 18, height = 12)
 p_top; p_magic; p_dp
 dev.off()
 

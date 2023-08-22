@@ -12,7 +12,7 @@ simple_bootstrap <- function(.data,
     apply(2, sample, replace = TRUE)
   
   bs_results <- parallel::mclapply(1:ncol(bootstrap_indices), function(n) {
-    iter_indice <- bootstrap_indices[, i]
+    iter_indice <- bootstrap_indices[, n]
     rs_data <- .data %>%
       slice(iter_indice, .by = !!sym(.by)) %>%
       mutate(bs_n = n)

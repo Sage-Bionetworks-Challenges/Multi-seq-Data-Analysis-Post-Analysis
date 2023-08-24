@@ -25,5 +25,6 @@ message("<<<< ", ncores, " cores will be used for parallel computing if applicab
 # Set up output directory -------------------------------------------------
 data_dir <- "data"
 dir.create(data_dir, showWarnings = FALSE)
-
+temp_dir <- "temp"
+dir.create(temp_dir, showWarnings = FALSE)
 

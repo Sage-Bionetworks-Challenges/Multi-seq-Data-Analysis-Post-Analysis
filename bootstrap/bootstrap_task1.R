@@ -22,6 +22,8 @@ baseline_deepimpute <- "9732074"
 # re-rank all data
 sub_ranks <- rank_submissions(scores_df, metrics[1], metrics[2])
 
+sub_df <- sub_df %>% arrange(match(team, sub_ranks$team))
+
 top_performer <- sub_ranks$id[1]
 sub_df <- sub_df %>% mutate(model_name = case_when(id == baseline_magic ~ "Baseline MAGIC",
                                                    id == baseline_deepimpute ~ "Baseline DeepImpute",

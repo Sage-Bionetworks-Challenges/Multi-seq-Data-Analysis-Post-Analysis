@@ -7,7 +7,7 @@ if (!require("pacman", quietly = TRUE)) install.packages("pacman", repos = "http
 pkgs <- c("dplyr", "stringr", "tidyr",
           "data.table", 
           "ggplot2", "patchwork", 
-          "Seurat", "bedr")
+          "Seurat", "bedr", "pbmcapply")
 
 pacman::p_load(pkgs, character.only = TRUE)
 

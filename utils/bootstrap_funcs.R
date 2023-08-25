@@ -73,23 +73,26 @@ bootstrap <- function(.data,
 
 
 # Compute Bayes Factor between two vectors --------------------------
-bayes_factor <- function(model, ref) {
-  
-  # if same values, return 0
-  if (identical(model, ref)) return(0)
-  
-  diff <- model - ref
-  
-  pos_n <- sum(diff >= 0)
-  neg_n <- sum(diff < 0)
-  
-  # prevent from all zeros
-  K <- (pos_n + 0.01) / (neg_n + 0.01)
-  
-  # reciprocate fraction of K
-  if (K < 1) K <- 1 / K
-  
-  return(K)
+# bayes_factor <- function(model, ref) {
+#   
+#   # if same values, return 0
+#   if (identical(model, ref)) return(0)
+#   
+#   diff <- model - ref
+#   
+#   pos_n <- sum(diff >= 0)
+#   neg_n <- sum(diff < 0)
+#   
+#   # prevent from all zeros
+#   K <- (pos_n + 0.01) / (neg_n + 0.01)
+#   
+#   # reciprocate fraction of K
+#   if (K < 1) K <- 1 / K
+#   
+#   return(K)
+# }
+calculate_bf <- function(x, y) {
+  bf_result <- BayesFactor::ttestBF(x = x, y = y)
+  extractBF(bf_result)$bf
 }
-
 

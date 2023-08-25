@@ -161,106 +161,136 @@ while(n < nrow(sub_df)) {
 }
 
 # remove the temp dir after the ensemble process completes
-# unlink(temp_dir, recursive = TRUE, force = TRUE)
+unlink(temp_dir, recursive = TRUE, force = TRUE)
 
 # read the ensembled scores
-# all_scores <- readRDS("ensemble_all_scores_sc1.rds")
-# all_scores <- fread("ensemble_all_scores_sc1_post.csv")
+all_scores <- fread(file.path(data_dir, "ensemble_all_scores_sc1_post.csv"))
+all_scores <- all_scores %>%
+  mutate(ensemble_label = case_when(ensemble_label == "2 + zoradeng_post" ~ "2 + Anonymous team 1",
+                                    ensemble_label == "4 + moqri_post" ~ "4 + Anonymous team 2",
+                                    ensemble_label == "6 + USF biostat_post" ~ "6 + Anonymous team 3",
+                                    TRUE ~ ensemble_label))
 
-# # add back baseline scores
-# baseline_scores <- all_sub_df %>% 
-#   filter(id %in% c(baseline_magic, baseline_deepimpute)) %>%
-#   get_scores(syn, sub_df = .) %>%
-#   mutate(ensemble_label = all_sub_df$model_name[match(id, all_sub_df$id)]) %>%
-#   select(dataset, nrmse_score, spearman_score, ensemble_label) 
+# correct the direction of nrmse
+all_scores$nrmse_score <- -all_scores$nrmse_score
 
-# all_scores <- bind_rows(all_scores, baseline_scores)
-
-# # correct the direction of nrmse
-# all_scores$nrmse_score <- -all_scores$nrmse_score
-
-# # Rank new submissions --------------------------------------------------------
-# # rank submissions all ensemble models and baselines
-# # will be used to plot later
-# rank_df <- all_scores %>%
-#   rank_submissions(metrics[1], metrics[2], "ensemble_label") %>%
-#   mutate(team = gsub("\\d? \\+ (.*)$", "\\1", ensemble_label),
-#          ensemble_label = factor(ensemble_label, levels = c("0 + GOAL_LAB", 
-#                                                             "1 + DLS5", 
-#                                                             "2 + LDExplore",
-#                                                             "Baseline MAGIC",
-#                                                             "3 + Metformin-121",
-#                                                             "Baseline DeepImpute")))
+# Rank new submissions --------------------------------------------------------
+# rank submissions all ensemble models and baselines
+# will be used to plot later
+rank_df <- all_scores %>%
+  rank_submissions(metrics[1], metrics[2], "ensemble_label") %>%
+  mutate(team = gsub("\\d? \\+ (.*)$", "\\1", ensemble_label),
+         ensemble_label = factor(ensemble_label, levels = c("0 + GOAL_LAB",
+                                                            "1 + DLS5",
+                                                            "2 + Anonymous team 1",
+                                                            "3 + BBKCS_post",
+                                                            "4 + Anonymous team 2",
+                                                            "5 + LDExplore",
+                                                            "6 + Anonymous team 3",
+                                                            # "Baseline MAGIC",
+                                                            "7 + Metformin-121"
+                                                            # "Baseline DeepImpute"
+                                                            )))
 
 
-# # Plotting ranks over ensembled models ------------------------------------
-# my_labels <- c(primary_rank = "NRMSE", secondary_rank = "Spearman Correlation")
-# my_colors <- c(primary_rank = "#709AE1E5", secondary_rank = "#FED439E5")
-# rank_line_p <- rank_df %>% 
-#   gather("metrics", "ranks", c(2:3)) %>%
-#   mutate(ranks = 1 / ranks) %>%
-#   ensemble_ranks_line(ensemble_label, ranks, metrics) +
-#   scale_color_manual(values = my_colors, labels = my_labels) +
-#   labs(x = NULL, y = "1 / Ranks", color = "Metrics") +
-#   theme(legend.position = c(0.95, 0.95), legend.justification = c("right", "top"),
-#         panel.grid.minor.y = element_blank(),
-#         text = element_text(size = 18),
-#         axis.title = element_text(size = 20))
+# Plotting ranks over ensembled models ------------------------------------
+metrics_labels <- c("NRMSE", "Spearman Correlation")
+models_colors <- c("0 + GOAL_LAB" = "#F94551",
+                   "1 + DLS5" = "#FED439E5",
+                   "2 + Anonymous team 1" = "#709AE1E5")
+rank_line_p <- rank_df %>%
+  gather("metrics", "ranks", c(2:3)) %>%
+  mutate(ranks = 1 / ranks) %>%
+  ensemble_ranks_line(ensemble_label, ranks, metrics) +
+  scale_color_manual(values = models_colors) +
+  scale_linetype_manual(values = c(primary_rank = "solid", secondary_rank = "dashed"),
+                        labels = metrics_labels) +
+  labs(x = NULL, y = "1 / Ranks", color = NULL, linetype = NULL) +
+  theme(legend.position = c(0.95, 0.95), legend.justification = c("right", "top"),
+        legend.background = element_rect(color = "black", fill = "white", linewidth = 0.1),
+        panel.grid.minor.y = element_blank(),
+        axis.text = element_text(size = 18),
+        axis.title.y = element_text(size = 18))
 
+# saving all plots
+pdf(file="sc1_ensemble_analysis_post.pdf", width = 16, height = 10)
+rank_line_p;
+dev.off()
 
 # # Bootstrapping -----------------------------------------------------------
 # # bootstrapping the rankings
+# all_scores <- fread(file.path(data_dir, "ensemble_all_scores_sc1_post.csv"))
+# all_scores <- all_scores %>%
+#   mutate(ensemble_label = case_when(ensemble_label == "2 + zoradeng_post" ~ "2 + Anonymous team 1",
+#                                     ensemble_label == "4 + moqri_post" ~ "4 + Anonymous team 2",
+#                                     ensemble_label == "6 + USF biostat_post" ~ "6 + Anonymous team 3",
+#                                     TRUE ~ ensemble_label))
+# # add back baseline scores
+# baseline_scores <- all_sub_df %>%
+#   filter(id %in% c(baseline_magic, baseline_deepimpute)) %>%
+#   get_scores(syn, sub_df = .) %>%
+#   mutate(ensemble_label = all_sub_df$model_name[match(id, all_sub_df$id)]) %>%
+#   select(dataset, nrmse_score, spearman_score, ensemble_label)
+# 
+# all_scores <- bind_rows(all_scores, baseline_scores)
+# 
 # boot_df <- simple_bootstrap(.data = all_scores,
 #                             seq_size = length(unique(all_scores$dataset)),
 #                             .by = "ensemble_label",
 #                             n_iter = 1000,
 #                             seed = 165136,
 #                             ncores = ncores)
-
+# 
 # # rank submissions for all bootstraps
 # boot_rank_df <- boot_df %>%
 #   nest(scores = c(metrics[1], metrics[2], dataset, ensemble_label), .by = bs_n) %>%
 #   mutate(ranks = parallel::mclapply(scores, rank_submissions, metrics[1], metrics[2], "ensemble_label", mc.cores = ncores)) %>%
 #   unnest(cols = ranks) %>%
 #   select(-scores)
-
+# 
 # # compute bayes factor of each new model against top performer
-# ref_ranks <- boot_rank_df %>% filter(ensemble_label == "0 + GOAL_LAB")
+# ref_ranks <- boot_rank_df %>% filter(ensemble_label == "2 + Anonymous team 1")
 # bf_df <- boot_rank_df %>%
 #   group_by(ensemble_label) %>%
-#   mutate(primary_bf = bayes_factor(primary_rank, ref_ranks$primary_rank),
-#          secondary_bf = bayes_factor(secondary_rank, ref_ranks$secondary_rank)) %>%
+#   mutate(primary_bf = calculate_bf(primary_rank, ref_ranks$primary_rank),
+#          secondary_bf = calculate_bf(secondary_rank, ref_ranks$secondary_rank)) %>%
 #   gather("metrics", "ranks", c(primary_rank, secondary_rank)) %>%
-#   mutate(ensemble_label = factor(ensemble_label, 
-#                                  levels = c("0 + GOAL_LAB", 
-#                                             "1 + DLS5", 
-#                                             "2 + LDExplore",
-#                                             "Baseline MAGIC",
-#                                             "3 + Metformin-121",
-#                                             "Baseline DeepImpute")))
-
-
-
+#   mutate(ensemble_label = factor(ensemble_label, levels = c("0 + GOAL_LAB",
+#                                                             "1 + DLS5",
+#                                                             "2 + Anonymous team 1",
+#                                                             "3 + BBKCS_post",
+#                                                             "4 + Anonymous team 2",
+#                                                             "5 + LDExplore",
+#                                                             "6 + Anonymous team 3",
+#                                                             "Baseline MAGIC",
+#                                                             "7 + Metformin-121",
+#                                                             "Baseline DeepImpute")))
+# 
+# 
 # # Plotting ----------------------------------------------------------------
 # # against top performer
 # p_top1 <- bf_df %>%
 #   filter(metrics == "primary_rank") %>%
-#   mutate(ranls = 1 / ranks) %>%
-#   bootstrap_boxplot(ensemble_label, ranks, primary_bf, 
-#                     bf_cutoffs=c(5, 30), ref_label = "Ref: Top Performer") +
-#   labs(x = NULL, y = "1 / (Bootstrapped Ranks of NRMSE)", color = "Bayes Factor")
-
+#   bootstrap_boxplot(ensemble_label, ranks, primary_bf, ref = "2 + Anonymous team 1",
+#                     bf_cutoffs = 3, ref_label = "Ref") +
+#   labs(x = NULL, y = "Bootstrapped ranks of NRMSE", color = NULL) +
+#   theme(legend.position = c(0.95, 0.85), legend.justification = c("right", "top"),
+#         legend.background = element_rect(color = "black", fill = "white", linewidth = 0.1),
+#         panel.grid.minor.y = element_blank()) 
+# 
 # p_top2 <- bf_df %>%
-#   filter(metrics == "secondary_rank") %>%
-#   mutate(ranls = 1 / ranks) %>%
-#   bootstrap_boxplot(ensemble_label, ranks, primary_bf, 
-#                     bf_cutoffs=c(5, 30), ref_label = "Ref: Top Performer") +
-#   labs(x = NULL, y = "1 / (Bootstrapped Ranks of Spearman Correlation)", color = "Bayes Factor")
-
+#   filter(metrics == "primary_rank") %>%
+#   bootstrap_boxplot(ensemble_label, ranks, primary_bf, ref = "2 + Anonymous team 1",
+#                     bf_cutoffs = 3, ref_label = "Ref") +
+#   labs(x = NULL, y = "Bootstrapped ranks of Spearman correlation", color = NULL) +
+#   theme(legend.position = c(0.95, 0.85), legend.justification = c("right", "top"),
+#         legend.background = element_rect(color = "black", fill = "white", linewidth = 0.1),
+#         panel.grid.minor.y = element_blank()) 
+# 
 # # saving all plots
-# pdf(file="sc1_ensemble_analysis.pdf", width = 16, height = 10)
+# pdf(file="sc1_ensemble_analysis_post.pdf", width = 16, height = 10)
 # rank_line_p;
-# p_top1 / p_top2 + 
-#   plot_layout(guides = "collect") & 
+# p_top1 / p_top2 +
+#   plot_layout(guides = "collect") &
 #   theme(legend.position = "top", legend.direction = "horizontal")
 # dev.off()

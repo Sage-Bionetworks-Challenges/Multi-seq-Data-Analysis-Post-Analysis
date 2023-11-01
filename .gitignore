@@ -46,3 +46,4 @@ vignettes/*.pdf
 *.rds
 data
 temp
+.DS_Store

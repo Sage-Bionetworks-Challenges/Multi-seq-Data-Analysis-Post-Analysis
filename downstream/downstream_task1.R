@@ -13,8 +13,8 @@ suppressPackageStartupMessages({
   library(future)
 })
 
-plan("multiprocess", workers = 6) # set up seurat funcs parallelization
-ncores <- 24 # cores used to run analysis on files in parallel
+# plan("multiprocess", workers = 6) # set up seurat funcs parallelization
+ncores <- 1 # cores used to run analysis on files in parallel
 
 source("/downstream/downstream_funcs.R")
 options(readr.show_col_types = FALSE)
@@ -25,9 +25,9 @@ ds_dir <-  "/challenge-data/downsampled/scrna/"
 output_dir <- "/output"
 
 # Set up datasets info
-# teams <- c("GOAL_LAB", "DLS5", "zoradeng_post", 
-#            "BBKCS_post", "moqri_post", "LDExplore",
-#            "USF_biostat_post", "Metformin-121")
+# teams <- c("GOAL_LAB", "DLS5", "zoradeng", 
+#            "BBKCS", "moqri", "LDExplore",
+#            "USF_biostat", "Metformin-121")
 datasets <- c("ds1a", "ds1b", "ds1c", "ds1d", "ds2", "ds3")
 ds_reads_props <- c("p10k", "p20k", "p50k")
 ds_cells_props <- c("p00625", "p0125", "p025")
@@ -238,6 +238,7 @@ message("Generating IFC comparison plots >>>>>>>>>>")
 ifc_plot_path <- file.path(output_dir, str_glue("{team}_log_fold_change_comparison.pdf"))
 pdf(ifc_plot_path)
 groups <- list(c("ds1a", "ds1b"), c("ds1c", "ds1d"))
+lfc_res <- list()
 for (g in groups) {
   controls <- c(str_glue("{team}_{g[1]}_{ds_reads_props}"), str_glue("{g[1]}_p1"))
   perturbs <- c(str_glue("{team}_{g[2]}_{ds_reads_props}"), str_glue("{g[2]}_p1"))
@@ -254,21 +255,27 @@ for (g in groups) {
                         by = "gene",
                         suffix = c("_10k", "_1")) %>%
     mutate(avg_log2FC_1 = ifelse(is.na(avg_log2FC_1), 0, avg_log2FC_1)) %>%
-    mutate(avg_log2FC_10k = ifelse(is.na(avg_log2FC_10k), 0, avg_log2FC_10k))
+    mutate(avg_log2FC_10k = ifelse(is.na(avg_log2FC_10k), 0, avg_log2FC_10k)) %>%
+    mutate(team = team, comparsion_group = paste(g, collapse = " vs "))
 
   lfc_20k <- full_join(x = lfcs[[2]],
                       y = lfcs[[4]],
                       by = "gene",
                       suffix = c("_20k", "_1")) %>%
     mutate(avg_log2FC_1 = ifelse(is.na(avg_log2FC_1), 0, avg_log2FC_1)) %>%
-    mutate(avg_log2FC_20k = ifelse(is.na(avg_log2FC_20k), 0, avg_log2FC_20k))
+    mutate(avg_log2FC_20k = ifelse(is.na(avg_log2FC_20k), 0, avg_log2FC_20k)) %>%
+    mutate(team = team, comparsion_group = paste(g, collapse = " vs "))
 
   lfc_50k <- full_join(x = lfcs[[3]],
                       y = lfcs[[4]],
                       by = "gene",
                       suffix = c("_50k", "_1")) %>%
     mutate(avg_log2FC_1 = ifelse(is.na(avg_log2FC_1), 0, avg_log2FC_1)) %>%
-    mutate(avg_log2FC_50k = ifelse(is.na(avg_log2FC_50k), 0, avg_log2FC_50k))
+    mutate(avg_log2FC_50k = ifelse(is.na(avg_log2FC_50k), 0, avg_log2FC_50k)) %>%
+    mutate(team = team, comparsion_group = paste(g, collapse = " vs "))
+
+  g_lfc_res <- list(lfc_10k = lfc_10k, lfc_20k = lfc_20k, lfc_50k = lfc_50k)
+  lfc_res <- append(lfc_res, g_lfc_res)
 
   p1 <- ggplot(lfc_10k, aes(x = avg_log2FC_1, y = avg_log2FC_10k))+
     geom_point()+
@@ -302,6 +309,8 @@ for (g in groups) {
   print(p3)
 }
 dev.off()
+
+saveRDS(lfc_res, file.path(output_dir, str_glue("{team}_lfc_results.rds")))
 
 # upload to synapse
 message("Uploading plots to synpase >>>>>>>>>>")

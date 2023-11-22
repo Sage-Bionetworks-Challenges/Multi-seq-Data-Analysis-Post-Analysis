@@ -49,3 +49,7 @@ Download output files (imputed gene expression / called peaks) of all final subm
 
 > **Warning**
 > For Task 1, the output (imputation) of each submission has large size ~30G. Please be aware of the available disk space.
+
+Report statistics about submissions
+    
+    Rscript -e 'rmarkdown::render("stats/get_submission_stats.rmd")'

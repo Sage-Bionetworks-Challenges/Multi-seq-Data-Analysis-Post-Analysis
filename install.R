@@ -5,9 +5,9 @@
 if (!require("pacman", quietly = TRUE)) install.packages("pacman", repos = "http://cran.us.r-project.org")
 
 pkgs <- c("dplyr", "stringr", "tidyr",
-          "data.table", 
+          "data.table", "gt", 
           "ggplot2", "patchwork", 
-          "Seurat", "bedr", "pbmcapply")
+          "Seurat", "bedr", "pbmcapply", "BayesFactor")
 
 pacman::p_load(pkgs, character.only = TRUE)
 

@@ -169,7 +169,7 @@ task_overview_table <- gt(task_overview, groupname_col = "Task") %>%
     columns = everything()
   ) %>%
   tab_footnote(
-    footnote = "Runs are calculated as 'Total Scored Submissions' multiplied by specific parameters for each task and phase.",
+    footnote = "Runs are calculated as 'Total Valid Submissions' multiplied by specific parameters for each task and phase.",
     locations = cells_column_labels(columns = c(`Total Valid Runs`))
   ) %>%
   tab_options(

@@ -1,0 +1,213 @@
+---
+title: "Submission Statistics Report"
+output: 
+  html_document:
+    # code_folding: hide
+    highlight: tango
+---
+
+## Overview
+
+This report presents a overview of the submissions for the scRNA-seq and scATAC-seq Data Analysis DREAM Challenge.
+
+```{r set-up, echo=FALSE, message=FALSE, warning=FALSE}
+knitr::opts_chunk$set(echo=FALSE, message=FALSE, warning=FALSE)
+# library(dplyr)
+# library(gt)
+setwd("..")
+source("utils/setup.R")
+source("utils/synapse_funcs.R")
+
+post_task1_eval_id <- "9615324"
+post_task2_eval_id <- "9615302"
+task1_eval_id <- "9615023"
+task2_eval_id <- "9615024"
+admin_name <- "scRNA-seq and scATAC-seq Data Analysis DREAM Challenge Organizers"
+```
+
+```{r get-submissions}
+setwd("..")
+if (file.exists("data/submission_stats.rds")) {
+  all_sub_df <- readRDS("data/submission_stats.rds")
+} else {
+  query <- stringr::str_glue(
+    "SELECT id, evaluationid, submitterid, 
+      status, submission_status, submission_phase, 
+      dockerrepositoryname, dockerdigest 
+    FROM {view_id}"
+  )
+  all_sub_df <- get_ranked_submissions(syn, query) %>%
+    unite(model, dockerrepositoryname, dockerdigest, sep = "@", remove = TRUE)
+  
+  uniq_submitterids <- unique(all_sub_df$submitterid)
+  
+  user_inx <- which(sapply(uniq_submitterids, is_user, syn = syn))
+  users <- uniq_submitterids[user_inx]
+  teams <- uniq_submitterids[-user_inx]
+  
+  member_inx <- validate_users(syn, users, teams)
+  members <- users[member_inx]
+  new_names <- sapply(members, function(member) {
+    team_inx <- which(sapply(teams, is_member, syn = syn, user_uid = member))
+    get_name(syn, teams[team_inx][1])
+  })
+  
+  all_sub_df$submitter_name <- ifelse(
+    all_sub_df$submitterid %in% members,
+    new_names[match(all_sub_df$submitterid, names(new_names))],
+    all_sub_df$team)
+  
+  saveRDS(all_sub_df, "data/submission_stats.rds")
+}
+
+# Split submissions
+sc1_subs <- all_sub_df %>% filter(evaluationid == task1_eval_id)
+sc1_pub_subs <- all_sub_df %>% filter(evaluationid == task1_eval_id, submission_phase == "public")
+sc1_private_subs <- all_sub_df %>% filter(evaluationid == task1_eval_id, submission_phase == "private")
+sc1_pub_scored_subs <- all_sub_df %>% filter(evaluationid == task1_eval_id, submission_phase == "public", submission_status == "SCORED", status == "ACCEPTED")
+sc1_private_scored_subs <- all_sub_df %>% filter(evaluationid == task1_eval_id, submission_phase == "private", submission_status == "SCORED", status == "ACCEPTED")
+sc1_post_subs <-  all_sub_df %>% filter(evaluationid == post_task1_eval_id, submission_status == "SCORED", status == "ACCEPTED")
+
+sc2_subs <- all_sub_df %>% filter(evaluationid == task2_eval_id)
+sc2_pub_subs <- all_sub_df %>% filter(evaluationid == task2_eval_id, submission_phase == "public")
+sc2_private_subs <- all_sub_df %>% filter(evaluationid == task2_eval_id, submission_phase == "private")
+sc2_pub_scored_subs <- all_sub_df %>% filter(evaluationid == task2_eval_id, submission_phase == "public", submission_status == "SCORED", status == "ACCEPTED")
+sc2_private_scored_subs <- all_sub_df %>% filter(evaluationid == task2_eval_id, submission_phase == "private", submission_status == "SCORED", status == "ACCEPTED")
+sc2_post_subs <-  all_sub_df %>% filter(evaluationid == post_task2_eval_id, submission_status == "SCORED", status == "ACCEPTED")
+
+```
+
+```{r define-paramters, echo=TRUE}
+# Define parameters for each task and phase
+# sc1-public: ds1c * 6 props (read-downsampled) * 3 replicates + ds1c  * 6 props (cell-downsampled) * 3 replicates
+sc1_public_params <- 1 * 6 * 3 + 1 * 3 * 3
+# sc1-private: 5 datasets (read-downsampled: ds1a, ds1b, ds1c, ds1d, ds3) * 3 props * 3 replicates + 2 datasets (cell-downsampled: ds2, ds3) * 3 props * 3 replicates
+sc1_private_params <- 4 * 3 * 3 + 1 * 3 * 3 + 1 * 6 * 3
+# sc2-public: ds1 (mouse) * 16 clusters (half of total) * 10 seeds * 3 props
+sc2_public_params <- 1 * (32 / 2) * 10 * 3
+# sc2-private: ds1 (mouse) * 32 clusters * 10 seeds * 3 props + ds2 (human) * 10 seeds * 3 props
+sc2_private_params <- 32 * 10 * 3 + 1 * 10 * 3
+```
+
+```{r generate-stats-df}
+# Add numbers 
+stats_df <- all_sub_df %>%
+  filter(evaluationid %in% c(task1_eval_id, task2_eval_id), submitter_name != admin_name) %>%
+  mutate(
+    Task = case_when(
+      evaluationid == task1_eval_id ~ "Task 1",
+      evaluationid == task2_eval_id ~ "Task 2",
+      TRUE ~ "Unknown"
+    ),
+    Scored_Accepted = ifelse(submission_status == "SCORED" & status == "ACCEPTED", 1, 0),
+    Valid_Runs_Param = case_when(
+      evaluationid == task1_eval_id & submission_phase == "public" ~ sc1_public_params,
+      evaluationid == task1_eval_id & submission_phase == "private" ~ sc1_private_params,
+      evaluationid == task2_eval_id & submission_phase == "public" ~ sc2_public_params,
+      evaluationid == task2_eval_id & submission_phase == "private" ~ sc2_private_params,
+      TRUE ~ 1
+    ),
+    Valid_Runs = Scored_Accepted * Valid_Runs_Param
+  ) 
+
+# Calculate unique teams for task 1
+unique_teams_task1 <- stats_df %>%
+  filter(evaluationid == task1_eval_id) %>%
+  distinct(submitter_name)
+
+# Calculate unique teams for task 2
+unique_teams_task2 <- stats_df %>%
+  filter(evaluationid == task2_eval_id) %>%
+  distinct(submitter_name)
+
+# Calculate unique teams for the total (considering potential overlap)
+total_unique_teams <- bind_rows(unique_teams_task1, unique_teams_task2) %>%
+  distinct(submitter_name)
+
+# Calculate Task Overview Statistics
+task_overview <- stats_df %>%
+  group_by(Task) %>%
+  summarise(
+    `Unique Teams` = length(unique(submitter_name)),
+    `Total Submissions` = n(),
+    `Total Valid Submissions` = sum(Scored_Accepted),
+    `Total Valid Runs` = sum(Valid_Runs)
+  )
+
+# Calculate a sum row for Task Overview, including the total unique teams
+task_overview_sum_row <- task_overview %>%
+  summarise(
+    Task = "Total",
+    `Unique Teams` = n_distinct(total_unique_teams),
+    `Total Submissions` = sum(`Total Submissions`),
+    `Total Valid Submissions` = sum(`Total Valid Submissions`),
+    `Total Valid Runs` = sum(`Total Valid Runs`)
+  )
+
+task_overview <- bind_rows(task_overview, task_overview_sum_row)
+
+# Phase-Specific Details for Each Task
+phase_specific <- stats_df %>%
+  filter(submission_phase != "NaN") %>%
+  group_by(Task, Phase = submission_phase) %>%
+  summarise(
+    `Unique Teams` = length(unique(submitter_name)),
+    # `Total Submissions` = n(),
+    `Total Valid Submissions` = sum(Scored_Accepted),
+    `Total Valid Runs` = sum(Valid_Runs)
+  ) %>%
+  arrange(match(paste(Task, Phase), c("1 public", "1 private", "2 public", "2 private")))
+
+task_overview_table <- gt(task_overview, groupname_col = "Task") %>%
+  tab_header(title = md("Task Overview")) %>%
+  tab_style(
+    style = cell_text(weight = "bold"),
+    locations = cells_column_labels()
+  ) %>%
+  cols_align(
+    align = "center",
+    columns = everything()
+  ) %>%
+  tab_footnote(
+    footnote = "Runs are calculated as 'Total Valid Submissions' multiplied by specific parameters for each task and phase.",
+    locations = cells_column_labels(columns = c(`Total Valid Runs`))
+  ) %>%
+  tab_options(
+    footnotes.marks = "*"
+  )
+
+# Create the gt table for Phase-Specific Details
+phase_specific_table <- gt(phase_specific, groupname_col = "Task") %>%
+  tab_header(title = md("Phase-Specific Details")) %>%
+  tab_style(
+    style = cell_text(weight = "bold"),
+    locations = cells_column_labels()
+  ) %>%
+  cols_align(
+    align = "center",
+    columns = everything()
+  ) %>%
+  tab_footnote(
+    footnote = "Runs are calculated as 'Total Valid Submissions' multiplied by specific parameters for each task and phase.",
+    locations = cells_column_labels(columns = c(`Total Valid Runs`))
+  ) %>%
+  tab_options(
+    footnotes.marks = "*"
+  )
+ 
+```
+
+## Table Results
+
+The task overview table summarizes key statistics for each task, including the number of unique teams, total submissions (models), scored submissions (models), and successful runs.
+
+```{r}
+task_overview_table
+```
+<br><br>
+```{r}
+phase_specific_table
+```
+<br><br>
+
+

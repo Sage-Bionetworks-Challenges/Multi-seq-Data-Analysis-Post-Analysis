@@ -42,7 +42,7 @@ matrices_to_seurat <- function(data_path, nickname, dataset, cells, data_type, c
   # if(file.exists(output_filename)){
   #   print('Error: RDS file already exists with this name')
   # }else{
-    print('Processing Seurat object - ETA ~5min')
+    # print('Processing Seurat object - ETA ~5min')
     
     # read in matrix and convert to seurat object
     # raw <- Read10X(data.dir = data_folder)
@@ -62,7 +62,11 @@ matrices_to_seurat <- function(data_path, nickname, dataset, cells, data_type, c
     so <- NormalizeData(so, verbose = FALSE) %>%
       FindVariableFeatures(nfeatures = 3000, verbose = FALSE) %>%
       ScaleData(verbose = FALSE) %>%
-      RunPCA(verbose = FALSE) %>%
+      RunPCA(verbose = FALSE)
+    suppressWarnings(
+      so <- so %>% RunUMAP(reduction = 'pca', dims = 1:npcs, verbose = FALSE)
+    )
+    so <- so %>%
       RunUMAP(reduction = 'pca', dims = 1:npcs, verbose = FALSE) %>%
       FindNeighbors(reduction = 'pca', dims = 1:npcs, verbose = FALSE) %>%
       FindClusters(resolution = seq(from = 0.1, to = 1, by = 0.1), verbose = FALSE)
@@ -160,8 +164,8 @@ compare_so_to_ref <- function(query,
   # KNN overlap
   unique_barcodes <- colnames(reference)
   for(i in unique_barcodes){
-    shared_nn <- sum(reference@graphs$RNA_nn[,i] & query@graphs$RNA_nn[,i])
-    union_nn <- sum(reference@graphs$RNA_nn[,i] | query@graphs$RNA_nn[,i])
+    shared_nn <- sum(reference@graphs$RNA_nn[i,] & query@graphs$RNA_nn[i,])
+    union_nn <- sum(reference@graphs$RNA_nn[i,] | query@graphs$RNA_nn[i,])
     
     curr_knn_tibble <- tibble(query_name = query@project.name,
                               reference_name = reference@project.name,

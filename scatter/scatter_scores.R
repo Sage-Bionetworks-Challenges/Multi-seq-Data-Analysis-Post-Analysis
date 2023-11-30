@@ -16,8 +16,8 @@ sub_df <- readRDS(sub_data)
 scores_df <- readRDS(score_data)
 
 # add scimpute
-si <- fread("data/scimpute_all_scores.csv") %>% mutate(id="123", submitterid="123", team="scImpute")
-scores_df <- rbind(scores_df, si)
+# si <- fread("data/scimpute_all_scores.csv") %>% mutate(id="123", submitterid="123", team="scImpute")
+# scores_df <- rbind(scores_df, si)
 
 # re-rank all submissions
 sub_ranks <- rank_submissions(scores_df %>% mutate(!!sym(metrics[1]) := -!!sym(metrics[1])), metrics[1], metrics[2])
@@ -60,7 +60,7 @@ sc1_plot_df <- scores_df %>%
     model_name = forcats::fct_relevel(
       model_name, "GOAL_LAB", "DLS5",
       "Anonymous team 1", 
-      "scImpute",
+      # "scImpute",
       "BBKCS", "Anonymous team 2", "LDExplore",
       "Anonymous team 3", "Baseline MAGIC",
       "Baseline DeepImpute",
@@ -83,19 +83,15 @@ sc1_plot_df <- scores_df %>%
 # plotting ----------------------------------------------------------
 # downsampled by reads
 # model_names <- levels(sc1_plot_df$model_name)[which(levels(sc1_plot_df$model_name) != "scImpute")]
-# jco_colors <- ggsci::pal_jco()(length(model_names))
+jco_colors <- ggsci::pal_jco()(length(model_names))
 # jco_colors <- c(jco_colors[1:3], "#F8766D", jco_colors[4:10])
-# colors <- setNames(jco_colors, unique(sc1_plot_df$model_name))
-jco_colors <- ggsci::pal_jco()(length(unique(sc1_plot_df$model_name)))
-jco_colors[11] <- "#F8766D"
 colors <- setNames(jco_colors, levels(sc1_plot_df$model_name))
-
 
 # manually adjust colors for overlapped points
 colors["Anonymous team 3"] <- "#2CA02C" 
 colors["Baseline MAGIC"] <- "#9467BD"
 colors["Baseline DeepImpute"] <- "#56B4E9"
-colors["scImpute"] <- "#F8766D"
+# colors["scImpute"] <- "#F8766D"
 
 sc1_p1 <- ggplot(
   sc1_plot_df %>% filter(downsampled == "by_reads"),
@@ -131,7 +127,7 @@ sc1_p <- sc1_p1 + sc1_p2 +
   plot_layout(guides = "collect", widths = c(5, 2)) &
   theme(legend.position = "bottom", legend.direction = "horizontal", legend.box.background = element_rect(colour = "black"))
 
-pdf(file = "metrics_scatter_scimpute_added_old.pdf", width = 12, height = 6)
+pdf(file = "metrics_scatter_scimpute_added.pdf", width = 12, height = 6)
 sc1_p
 dev.off()
 
@@ -140,6 +136,8 @@ dev.off()
 saveRDS(sc1_plot_df, "data/metrics_scatter_data.rds")
 file <- synapseclient$File("data/metrics_scatter_data.rds", parent = "syn51270280")
 stored <- syn$store(file, used = "syn51320982")
-file <- synapseclient$File("metrics_scatter_scimpute_added.pdf", parent = "syn51270280")
+file <- synapseclient$File("metrics_scatter.pdf", parent = "syn51270280")
 stored <- syn$store(file, used = "syn51320982")
+# file <- synapseclient$File("metrics_scatter_scimpute_added.pdf", parent = "syn51270280")
+# stored <- syn$store(file, used = "syn51320982")
 
